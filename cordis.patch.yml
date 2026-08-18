@@ -1,0 +1,7 @@
+# dsh-plugin-atlas bundle patch: insert the plugin into a profile's layer
+# stack. The node half registers /dsh-plugin-atlas/* routes on the web server
+# (archive list / unarchive / auto-archive rules); the client half contributes
+# the sidebar-foot archive drawer and the conversation tick rail.
+- insert:
+    - id: dsh-plugin-atlas
+      name: 'dsh-plugin-atlas'
