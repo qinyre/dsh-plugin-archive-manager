@@ -24,13 +24,13 @@
 ## 安装
 
 ```sh
-dsh plugin --profile web add github:qinyre/dsh-plugin-atlas
+dsh plugin --profile web add dsh-plugin-atlas
 ```
 
-npm 发布后亦可直接使用包名安装（Web UI 的 设置 → 插件 里经 [dsh-plugin-install](https://github.com/qinyre/dsh-plugin-install) 安装同理）：
+Web UI 的 设置 → 插件 里经 [dsh-plugin-install](https://github.com/qinyre/dsh-plugin-install) 按包名安装同理。亦可直接从 GitHub 仓库安装：
 
 ```sh
-dsh plugin --profile web add dsh-plugin-atlas
+dsh plugin --profile web add github:qinyre/dsh-plugin-atlas
 ```
 
 开发时可安装本地源码检出，包内 `prepare` 脚本会自动构建 `lib/`：
