@@ -1,9 +1,9 @@
-/** dsh-plugin-atlas client entry: the sidebar-foot archive drawer, the
- * conversation tick rail, and their shared locale + CSS. The rail and the
- * drawer talk to the host half through same-origin fetch on
- * /dsh-plugin-atlas/* (registered by src/routes.ts). */
+/** dsh-plugin-atlas client entry: the Settings archive-management section,
+ * the conversation tick rail, and their shared locale + CSS. Both surfaces
+ * talk to the host half through same-origin fetch on /dsh-plugin-atlas/*
+ * (registered by src/routes.ts). */
 
-import { createElement, useSyncExternalStore } from 'react'
+import { createElement } from 'react'
 import { Rail } from './rail.tsx'
 import { ArchivePanel, type AtlasApi } from './ArchivePanel.tsx'
 import { zh, en } from './locales.ts'
@@ -68,27 +68,6 @@ function makeApi(): AtlasApi {
     autorun: (dryRun: boolean) =>
       postJson<{ archived: string[]; selected: unknown[] }>('/dsh-plugin-atlas/autorun', { dryRun }),
   }
-}
-
-// ---------------------------------------------------------------------------
-// Drawer open state (shared between the sidebar-foot button and the overlay)
-
-let drawerOpen = false
-const drawerListeners = new Set<() => void>()
-function setDrawerOpen(open: boolean): void {
-  if (drawerOpen === open) return
-  drawerOpen = open
-  for (const listener of drawerListeners) listener()
-}
-function useDrawerOpen(): boolean {
-  return useSyncExternalStore(
-    listener => {
-      drawerListeners.add(listener)
-      return () => { drawerListeners.delete(listener) }
-    },
-    () => drawerOpen,
-    () => false,
-  )
 }
 
 // ---------------------------------------------------------------------------
@@ -210,45 +189,40 @@ const CSS = `
 .dsha-preview-meta{display:flex;gap:8px;align-items:center;font-size:11px;color:var(--dsw-alias-label-tertiary,rgba(110,117,140,.85));margin-bottom:6px}
 .dsha-preview-user{font-size:13px;line-height:1.5;color:var(--dsw-alias-label-primary,rgba(36,42,60,.95));display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word}
 .dsha-preview-agent{margin-top:8px;font-size:13px;line-height:1.5;color:var(--dsw-alias-label-secondary,rgba(110,117,140,.9));display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word}
-.dsha-drawer{position:fixed;inset:0;z-index:60;pointer-events:none}
-.dsha-drawer-backdrop{position:absolute;inset:0;background:var(--dsw-alias-bg-mask-2,rgba(15,18,25,.32));pointer-events:auto;animation:dsha-fade .16s ease-out}
-.dsha-drawer-panel{position:absolute;top:0;right:0;bottom:0;width:min(440px,94vw);display:flex;flex-direction:column;background:var(--dsw-alias-bg-layer-2,#fff);color:var(--dsw-alias-label-primary,#222);border-left:1px solid var(--dsw-alias-border-l2,rgba(128,134,156,.25));box-shadow:-12px 0 40px rgba(0,0,0,.16);pointer-events:auto;animation:dsha-slide .18s ease-out}
-@keyframes dsha-fade{from{opacity:0}}
-@keyframes dsha-slide{from{transform:translateX(24px);opacity:.4}}
-@media(prefers-reduced-motion:reduce){.dsha-drawer-backdrop,.dsha-drawer-panel{animation:none}}
-.dsha-drawer-head{display:flex;align-items:center;gap:8px;padding:12px 14px;border-bottom:1px solid var(--dsw-alias-border-l1,rgba(128,134,156,.2))}
-.dsha-drawer-title{font-size:15px;font-weight:600}
-.dsha-drawer-count{font-size:11px;font-weight:600;color:#2e6fe8;background:rgba(46,111,232,.12);padding:1px 8px;border-radius:9px;line-height:18px}
-.dsha-drawer-head-actions{margin-left:auto;display:inline-flex;gap:2px}
-.dsha-drawer-btn{display:inline-flex;align-items:center;gap:4px;font-size:12px;padding:5px 9px;border:0;border-radius:7px;background:transparent;color:var(--dsw-alias-label-primary,#222);cursor:pointer}
-.dsha-drawer-btn:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(128,134,156,.12))}
-.dsha-drawer-btn:disabled{opacity:.45;cursor:default}
-.dsha-drawer-btn svg{width:14px;height:14px}
-.dsha-drawer-search{margin:12px 14px 4px;padding:7px 12px;font-size:13px;border:1px solid var(--dsw-alias-border-l2,rgba(128,134,156,.4));border-radius:8px;background:var(--dsw-alias-bg-base,#fff);color:inherit;outline:none;transition:border-color .12s ease-out}
-.dsha-drawer-search:focus{border-color:#2e6fe8}
-.dsha-drawer-search::placeholder{color:var(--dsw-alias-label-secondary,rgba(80,88,110,.9))}
-.dsha-drawer-body{flex:1;overflow-y:auto;padding:4px 8px 12px;scrollbar-width:thin;scrollbar-color:var(--dsw-alias-scrollbar-bg-l2,rgba(128,134,156,.4)) transparent}
-.dsha-drawer-note{padding:48px 8px;text-align:center;font-size:13px;color:var(--dsw-alias-label-secondary,rgba(80,88,110,.9))}
-.dsha-drawer-group{margin:10px 6px 4px}
-.dsha-drawer-group-head{display:flex;align-items:center;justify-content:space-between;padding:2px 8px 4px}
-.dsha-drawer-group-title{font-size:12px;font-weight:600;color:var(--dsw-alias-label-primary,#222);display:flex;align-items:center;gap:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.dsha-drawer-group-count{font-size:11px;font-weight:600;color:#2e6fe8;background:rgba(46,111,232,.12);border-radius:8px;padding:0 6px;line-height:16px}
-.dsha-drawer-row{display:flex;gap:10px;align-items:flex-start;padding:8px;border-radius:8px;cursor:pointer;border:1px solid transparent}
-.dsha-drawer-row:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(128,134,156,.12))}
-.dsha-drawer-row:has(input:checked){background:rgba(46,111,232,.08);border-color:rgba(46,111,232,.35)}
-.dsha-drawer-row input{margin-top:3px;accent-color:#2e6fe8}
-.dsha-drawer-row-main{display:flex;flex-direction:column;gap:2px;min-width:0}
-.dsha-drawer-row-title{font-size:13px;line-height:1.4;color:var(--dsw-alias-label-primary,#222);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.dsha-drawer-row-meta{font-size:11px;color:var(--dsw-alias-label-secondary,rgba(80,88,110,.9));overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.dsha-drawer-actions{display:flex;align-items:center;gap:10px;padding:10px 14px;border-top:1px solid var(--dsw-alias-border-l1,rgba(128,134,156,.2))}
-.dsha-drawer-message{font-size:12px}
-.dsha-drawer-message.ok{color:#2e6fe8}
-.dsha-drawer-message.err{color:var(--dsw-static-red-500,#ef4444)}
-.dsha-drawer-selected{margin-left:auto;font-size:12px;color:var(--dsw-alias-label-primary,#222)}
-.dsha-drawer-primary{font-size:13px;font-weight:600;padding:6px 18px;border:0;border-radius:8px;background:#2e6fe8;color:#fff;cursor:pointer}
-.dsha-drawer-primary:hover:not(:disabled){background:#1f5fd8}
-.dsha-drawer-primary:disabled{background:rgba(46,111,232,.14);color:#2e6fe8;cursor:default}
-.dsha-rules{margin:0 14px 14px;padding:12px 14px;display:flex;flex-direction:column;gap:10px;border:1px solid var(--dsw-alias-border-l2,rgba(128,134,156,.4));border-radius:10px;background:var(--dsw-alias-bg-base,#fff)}
+.dsha-page{display:flex;flex-direction:column;gap:12px;width:100%;max-width:760px;color:var(--dsw-alias-label-primary,#222)}
+.dsha-page-head{display:flex;align-items:center;gap:8px}
+.dsha-page-head h3{margin:0;font-size:13px;line-height:20px;font-weight:600}
+.dsha-page-count{font-size:11px;font-weight:600;color:#2e6fe8;background:rgba(46,111,232,.12);padding:1px 8px;border-radius:9px;line-height:18px}
+.dsha-page-head-actions{margin-left:auto;display:inline-flex;gap:2px}
+.dsha-page-intro{margin:0;font-size:13px;line-height:20px;color:var(--dsw-alias-label-tertiary,rgba(110,117,140,.85))}
+.dsha-page-btn{display:inline-flex;align-items:center;gap:4px;font-size:12px;padding:5px 9px;border:0;border-radius:7px;background:transparent;color:var(--dsw-alias-label-primary,#222);cursor:pointer}
+.dsha-page-btn:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(128,134,156,.12))}
+.dsha-page-btn:disabled{opacity:.45;cursor:default}
+.dsha-page-btn svg{width:14px;height:14px}
+.dsha-page-search{padding:7px 12px;font-size:13px;border:1px solid var(--dsw-alias-border-l2,rgba(128,134,156,.4));border-radius:8px;background:var(--dsw-alias-bg-base,#fff);color:inherit;outline:none;transition:border-color .12s ease-out}
+.dsha-page-search:focus{border-color:#2e6fe8}
+.dsha-page-search::placeholder{color:var(--dsw-alias-label-secondary,rgba(80,88,110,.9))}
+.dsha-page-note{padding:36px 8px;text-align:center;font-size:13px;color:var(--dsw-alias-label-secondary,rgba(80,88,110,.9))}
+.dsha-page-group{margin:2px 0}
+.dsha-page-group-head{display:flex;align-items:center;justify-content:space-between;padding:2px 8px 4px}
+.dsha-page-group-title{font-size:12px;font-weight:600;color:var(--dsw-alias-label-primary,#222);display:flex;align-items:center;gap:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dsha-page-group-count{font-size:11px;font-weight:600;color:#2e6fe8;background:rgba(46,111,232,.12);border-radius:8px;padding:0 6px;line-height:16px}
+.dsha-page-row{display:flex;gap:10px;align-items:flex-start;padding:8px;border-radius:8px;cursor:pointer;border:1px solid transparent}
+.dsha-page-row:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(128,134,156,.12))}
+.dsha-page-row:has(input:checked){background:rgba(46,111,232,.08);border-color:rgba(46,111,232,.35)}
+.dsha-page-row input{margin-top:3px;accent-color:#2e6fe8}
+.dsha-page-row-main{display:flex;flex-direction:column;gap:2px;min-width:0}
+.dsha-page-row-title{font-size:13px;line-height:1.4;color:var(--dsw-alias-label-primary,#222);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dsha-page-row-meta{font-size:11px;color:var(--dsw-alias-label-secondary,rgba(80,88,110,.9));overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dsha-page-actions{display:flex;align-items:center;gap:10px}
+.dsha-page-message{font-size:12px}
+.dsha-page-message.ok{color:#2e6fe8}
+.dsha-page-message.err{color:var(--dsw-static-red-500,#ef4444)}
+.dsha-page-selected{margin-left:auto;font-size:12px;color:var(--dsw-alias-label-primary,#222)}
+.dsha-page-primary{font-size:13px;font-weight:600;padding:6px 18px;border:0;border-radius:8px;background:#2e6fe8;color:#fff;cursor:pointer}
+.dsha-page-primary:hover:not(:disabled){background:#1f5fd8}
+.dsha-page-primary:disabled{background:rgba(46,111,232,.14);color:#2e6fe8;cursor:default}
+.dsha-rules{margin:8px 0 0;padding:12px 14px;display:flex;flex-direction:column;gap:10px;border:1px solid var(--dsw-alias-border-l2,rgba(128,134,156,.4));border-radius:10px;background:var(--dsw-alias-bg-base,#fff)}
 .dsha-rules-title{font-size:12px;font-weight:600;color:var(--dsw-alias-label-primary,#222)}
 .dsha-rules-row{display:flex;gap:8px;align-items:center;font-size:12px}
 .dsha-rules-row>span{flex:1;display:flex;flex-direction:column;gap:2px}
@@ -257,11 +231,7 @@ const CSS = `
 .dsha-rules-row input[type=number]:focus{border-color:#2e6fe8}
 .dsha-rules-row input[type=checkbox]{accent-color:#2e6fe8}
 .dsha-rules-actions{display:flex;gap:6px}
-.dsha-rules-actions .dsha-drawer-btn{margin-left:0}
-.dsha-foot-btn{display:flex;align-items:center;gap:6px;font-size:12px;padding:4px 8px;border:0;border-radius:6px;background:transparent;color:inherit;cursor:pointer;opacity:.85}
-.dsha-foot-btn:hover{opacity:1;background:rgba(128,128,128,.15)}
-.dsha-foot-btn svg{width:15px;height:15px;flex:none}
-.dsha-foot-count{font-size:10px;padding:0 5px;border-radius:7px;background:rgba(128,128,128,.35);line-height:14px}
+.dsha-rules-actions .dsha-page-btn{margin-left:0}
 `
 
 function injectCss(): void {
@@ -277,14 +247,6 @@ function injectCss(): void {
 export const name = 'dsh-plugin-atlas'
 export const inject = ['slots', 'locale', 'sessions']
 
-/** Archive-box icon for the sidebar-foot trigger. */
-function ArchiveIcon(): React.ReactElement {
-  return createElement('svg', { viewBox: '0 0 16 16', fill: 'none', stroke: 'currentColor', strokeWidth: 1.4 },
-    createElement('rect', { x: 2, y: 3, width: 12, height: 3, rx: 0.8 }),
-    createElement('path', { d: 'M3.5 6.5v6a1 1 0 0 0 1 1h7a1 1 0 0 0 1-1v-6' }),
-    createElement('path', { d: 'M6.5 9h3' }))
-}
-
 export function apply(ctx: AtlasClientContext): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'dsh-plugin-atlas: dictionaries')
   injectCss()
@@ -292,30 +254,11 @@ export function apply(ctx: AtlasClientContext): void {
   const t = ctx.locale.bind(NS)
   const api = makeApi()
 
-  // Sidebar-foot trigger: opens the archive drawer.
-  ctx.slots.inject('sidebar.footer.action', () =>
+  // Archive management: a first-level Settings section, next to 技能与 MCP.
+  ctx.slots.inject('settings.section', () =>
     ctx.slots.register(
-      { name: 'sidebar.footer.action', id: 'atlas-archive', order: 50 },
-      (props: { wide?: boolean }) => {
-        const open = useDrawerOpen()
-        return createElement('button', {
-          type: 'button',
-          className: 'dsha-foot-btn',
-          title: t('drawer.title'),
-          onClick: () => { setDrawerOpen(!open) },
-        }, createElement(ArchiveIcon), props.wide === false ? null : createElement('span', null, t('drawer.title')))
-      },
-    ))
-
-  // Archive drawer overlay.
-  ctx.slots.inject('shell.overlay', () =>
-    ctx.slots.register(
-      { name: 'shell.overlay', id: 'atlas-drawer', order: 200 },
-      () => {
-        const open = useDrawerOpen()
-        if (!open) return null
-        return createElement(ArchivePanel, { t, api, onClose: () => { setDrawerOpen(false) } })
-      },
+      { name: 'settings.section', id: 'atlas', order: 14, label: () => t('sectionNav'), locale: NS },
+      () => createElement(ArchivePanel, { t, api }),
     ))
 
   // Conversation rail: a session-scoped child declared by one overlay entry.
