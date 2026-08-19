@@ -1,8 +1,8 @@
-/** The archive drawer: sidebar-foot entry opens this overlay panel. Lists
- * archived sessions grouped by workspace with a lazy per-row preview, search,
- * single/batch unarchive, and the auto-archive rules form (default OFF) with
- * dry-run. All mutations go through the same-origin host routes; the sidebar
- * itself updates live because the host pushes
+/** The archive-management page: a first-level Settings section (「归档管理」).
+ * Lists archived sessions grouped by workspace with a lazy per-row preview,
+ * search, single/batch unarchive, and the auto-archive rules form (default
+ * OFF) with dry-run. All mutations go through the same-origin host routes;
+ * the sidebar itself updates live because the host pushes
  * `host/archived-sessions-changed` on every registry write. */
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
@@ -21,7 +21,6 @@ export interface AtlasApi {
 export interface ArchivePanelProps {
   t: (key: string) => string
   api: AtlasApi
-  onClose: () => void
 }
 
 /** Bound template: t('k') returns '…{n}…' — fill it locally. */
@@ -31,17 +30,9 @@ function tf(t: (key: string) => string, key: string, n: number): string {
 
 function RefreshIcon(): React.ReactElement {
   return (
-    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4">
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.4}>
       <path d="M13.5 8a5.5 5.5 0 1 1-1.62-3.9" />
       <path d="M13.5 1.8v2.7h-2.7" />
-    </svg>
-  )
-}
-
-function CloseIcon(): React.ReactElement {
-  return (
-    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4">
-      <path d="M4 4l8 8M12 4l-8 8" />
     </svg>
   )
 }
@@ -83,7 +74,7 @@ export function ArchivePanel(props: ArchivePanelProps): React.ReactElement {
 
   useEffect(() => { void reload() }, [reload])
 
-  // Rules load once per drawer open.
+  // Rules load once per section mount.
   useEffect(() => {
     void api.rules()
       .then(({ rules }) => { setForm(formOfRules(rules)) })
@@ -156,12 +147,12 @@ export function ArchivePanel(props: ArchivePanelProps): React.ReactElement {
     setBusy(true)
     try {
       await api.unarchiveBatch([...selected])
-      setSelected(new Set())
-      setMessage(tf(t, 'drawer.unarchived', [...selected].length))
+      setMessage(tf(t, 'archive.unarchived', [...selected].length))
       setMessageKind('ok')
+      setSelected(new Set())
       await reload()
-    } catch (error) {
-      setMessage(t('drawer.unarchiveFailed'))
+    } catch {
+      setMessage(t('archive.unarchiveFailed'))
       setMessageKind('err')
     } finally {
       setBusy(false)
@@ -209,137 +200,132 @@ export function ArchivePanel(props: ArchivePanelProps): React.ReactElement {
   }
 
   return (
-    <div className="dsha-drawer">
-      <div className="dsha-drawer-backdrop" onClick={props.onClose} />
-      <div className="dsha-drawer-panel" role="dialog" aria-label={t('drawer.title')}>
-        <header className="dsha-drawer-head">
-          <span className="dsha-drawer-title">{t('drawer.title')}</span>
-          <span className="dsha-drawer-count">{rows === null ? '' : rows.length}</span>
-          <span className="dsha-drawer-head-actions">
-            <button type="button" className="dsha-drawer-btn" title={t('drawer.reload')} aria-label={t('drawer.reload')} onClick={() => { void reload() }}>
-              <RefreshIcon />
-            </button>
-            <button type="button" className="dsha-drawer-btn" title={t('drawer.close')} aria-label={t('drawer.close')} onClick={props.onClose}>
-              <CloseIcon />
-            </button>
-          </span>
-        </header>
-
-        <input
-          className="dsha-drawer-search"
-          type="search"
-          placeholder={t('drawer.search')}
-          value={query}
-          onChange={event => { setQuery(event.target.value) }}
-        />
-
-        <div className="dsha-drawer-body">
-          {rows === null ? (
-            <div className="dsha-drawer-note">{t('drawer.loading')}</div>
-          ) : visible.length === 0 ? (
-            <div className="dsha-drawer-note">{t('drawer.empty')}</div>
-          ) : groups.map(([groupTitle, groupRows]) => (
-            <section className="dsha-drawer-group" key={groupTitle === '' ? '\0' : groupTitle}>
-              <header className="dsha-drawer-group-head">
-                <span className="dsha-drawer-group-title">
-                  {groupTitle === '' ? t('drawer.noWorkspace') : groupTitle}
-                  <span className="dsha-drawer-group-count">{groupRows.length}</span>
-                </span>
-                <button type="button" className="dsha-drawer-btn" onClick={() => { toggleGroup(groupRows) }}>
-                  {t('drawer.selectAll')}
-                </button>
-              </header>
-              {groupRows.map(row => {
-                const preview = previews.get(row.id)
-                return (
-                  <label key={row.id} className="dsha-drawer-row">
-                    <input
-                      type="checkbox"
-                      checked={selected.has(row.id)}
-                      onChange={() => { toggle(row.id) }}
-                    />
-                    <span className="dsha-drawer-row-main">
-                      <span className="dsha-drawer-row-title" title={preview?.title ?? row.id}>
-                        {preview?.title ?? row.id}
-                      </span>
-                      <span className="dsha-drawer-row-meta">
-                        {row.cwd === null ? '' : row.cwd}
-                        {row.cwd !== null && preview?.turns !== undefined && preview.turns > 0 ? ' · ' : ''}
-                        {preview !== undefined && preview.turns > 0 ? tf(t, 'drawer.previewTurns', preview.turns) : ''}
-                      </span>
-                    </span>
-                  </label>
-                )
-              })}
-            </section>
-          ))}
-        </div>
-
-        <footer className="dsha-drawer-actions">
-          {message !== null ? <span className={`dsha-drawer-message ${messageKind}`}>{message}</span> : null}
-          <span className="dsha-drawer-selected">
-            {selected.size > 0 ? tf(t, 'drawer.selected', selected.size) : ''}
-          </span>
-          <button
-            type="button"
-            className="dsha-drawer-primary"
-            disabled={busy || selected.size === 0}
-            onClick={() => { void unarchiveSelected() }}
-          >
-            {t('drawer.unarchiveSelected')}
+    <div className="dsha-page">
+      <div className="dsha-page-head">
+        <h3>{t('archive.title')}</h3>
+        <span className="dsha-page-count">{rows === null ? '' : rows.length}</span>
+        <span className="dsha-page-head-actions">
+          <button type="button" className="dsha-page-btn" title={t('archive.reload')} aria-label={t('archive.reload')} onClick={() => { void reload() }}>
+            <RefreshIcon />
           </button>
-        </footer>
-
-        {form !== null ? (
-          <section className="dsha-rules">
-            <header className="dsha-rules-title">{t('rules.title')}</header>
-            <label className="dsha-rules-row">
-              <input
-                type="checkbox"
-                checked={form.enabled}
-                onChange={event => { setForm({ ...form, enabled: event.target.checked }) }}
-              />
-              <span>
-                {t('rules.enabled')}
-                <em className="dsha-rules-hint">{t('rules.enabledHint')}</em>
-              </span>
-            </label>
-            <div className="dsha-rules-row">
-              <span>{t('rules.maxIdleDays')}</span>
-              <input
-                type="number" min={1} max={3650}
-                placeholder={t('rules.maxIdleDaysOff')}
-                value={form.maxIdleDays}
-                onChange={event => { setForm({ ...form, maxIdleDays: event.target.value }) }}
-              />
-            </div>
-            <div className="dsha-rules-row">
-              <span>{t('rules.perWorkspaceKeep')}</span>
-              <input
-                type="number" min={1} max={500}
-                placeholder={t('rules.perWorkspaceKeepOff')}
-                value={form.perWorkspaceKeep}
-                onChange={event => { setForm({ ...form, perWorkspaceKeep: event.target.value }) }}
-              />
-            </div>
-            <div className="dsha-rules-actions">
-              <button type="button" className="dsha-drawer-btn" disabled={busy} onClick={() => { void saveRules() }}>
-                {t('rules.save')}
-              </button>
-              <button type="button" className="dsha-drawer-btn" disabled={busy} onClick={() => { void runRules(true) }}>
-                {t('rules.dryRun')}
-              </button>
-              <button
-                type="button" className="dsha-drawer-btn"
-                disabled={busy || !form.enabled}
-                onClick={() => { void runRules(false) }}
-              >
-                {t('rules.runNow')}
-              </button>
-            </div>
-          </section>
-        ) : null}
+        </span>
       </div>
+      <p className="dsha-page-intro">{t('archive.intro')}</p>
+
+      <input
+        className="dsha-page-search"
+        type="search"
+        placeholder={t('archive.search')}
+        value={query}
+        onChange={event => { setQuery(event.target.value) }}
+      />
+
+      <div className="dsha-page-list">
+        {rows === null ? (
+          <div className="dsha-page-note">{t('archive.loading')}</div>
+        ) : visible.length === 0 ? (
+          <div className="dsha-page-note">{t('archive.empty')}</div>
+        ) : groups.map(([groupTitle, groupRows]) => (
+          <section className="dsha-page-group" key={groupTitle === '' ? '\0' : groupTitle}>
+            <header className="dsha-page-group-head">
+              <span className="dsha-page-group-title">
+                {groupTitle === '' ? t('archive.noWorkspace') : groupTitle}
+                <span className="dsha-page-group-count">{groupRows.length}</span>
+              </span>
+              <button type="button" className="dsha-page-btn" onClick={() => { toggleGroup(groupRows) }}>
+                {t('archive.selectAll')}
+              </button>
+            </header>
+            {groupRows.map(row => {
+              const preview = previews.get(row.id)
+              return (
+                <label key={row.id} className="dsha-page-row">
+                  <input
+                    type="checkbox"
+                    checked={selected.has(row.id)}
+                    onChange={() => { toggle(row.id) }}
+                  />
+                  <span className="dsha-page-row-main">
+                    <span className="dsha-page-row-title" title={preview?.title ?? row.id}>
+                      {preview?.title ?? row.id}
+                    </span>
+                    <span className="dsha-page-row-meta">
+                      {row.cwd === null ? '' : row.cwd}
+                      {row.cwd !== null && preview?.turns !== undefined && preview.turns > 0 ? ' · ' : ''}
+                      {preview !== undefined && preview.turns > 0 ? tf(t, 'archive.previewTurns', preview.turns) : ''}
+                    </span>
+                  </span>
+                </label>
+              )
+            })}
+          </section>
+        ))}
+      </div>
+
+      <div className="dsha-page-actions">
+        {message !== null ? <span className={`dsha-page-message ${messageKind}`}>{message}</span> : null}
+        <span className="dsha-page-selected">
+          {selected.size > 0 ? tf(t, 'archive.selected', selected.size) : ''}
+        </span>
+        <button
+          type="button"
+          className="dsha-page-primary"
+          disabled={busy || selected.size === 0}
+          onClick={() => { void unarchiveSelected() }}
+        >
+          {t('archive.unarchiveSelected')}
+        </button>
+      </div>
+
+      {form !== null ? (
+        <section className="dsha-rules">
+          <header className="dsha-rules-title">{t('rules.title')}</header>
+          <label className="dsha-rules-row">
+            <input
+              type="checkbox"
+              checked={form.enabled}
+              onChange={event => { setForm({ ...form, enabled: event.target.checked }) }}
+            />
+            <span>
+              {t('rules.enabled')}
+              <em className="dsha-rules-hint">{t('rules.enabledHint')}</em>
+            </span>
+          </label>
+          <div className="dsha-rules-row">
+            <span>{t('rules.maxIdleDays')}</span>
+            <input
+              type="number" min={1} max={3650}
+              placeholder={t('rules.maxIdleDaysOff')}
+              value={form.maxIdleDays}
+              onChange={event => { setForm({ ...form, maxIdleDays: event.target.value }) }}
+            />
+          </div>
+          <div className="dsha-rules-row">
+            <span>{t('rules.perWorkspaceKeep')}</span>
+            <input
+              type="number" min={1} max={500}
+              placeholder={t('rules.perWorkspaceKeepOff')}
+              value={form.perWorkspaceKeep}
+              onChange={event => { setForm({ ...form, perWorkspaceKeep: event.target.value }) }}
+            />
+          </div>
+          <div className="dsha-rules-actions">
+            <button type="button" className="dsha-page-btn" disabled={busy} onClick={() => { void saveRules() }}>
+              {t('rules.save')}
+            </button>
+            <button type="button" className="dsha-page-btn" disabled={busy} onClick={() => { void runRules(true) }}>
+              {t('rules.dryRun')}
+            </button>
+            <button
+              type="button" className="dsha-page-btn"
+              disabled={busy || !form.enabled}
+              onClick={() => { void runRules(false) }}
+            >
+              {t('rules.runNow')}
+            </button>
+          </div>
+        </section>
+      ) : null}
     </div>
   )
 }
