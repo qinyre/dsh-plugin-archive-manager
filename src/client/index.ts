@@ -81,9 +81,32 @@ const RETRY_BACKOFF_MS = 200
 const LOADING_WAIT_MS = 50
 const LOAD_MAX_PAGES = 400
 const LOAD_MAX_STALLS = 5
+/** Back-fill pacing: the conversation list is not virtualized, so every page
+ * lands as a full host re-commit. Fired back-to-back at switch time they
+ * freeze the UI; spaced over idle frames the switch stays responsive while
+ * the rail still indexes the whole history in the background. */
+const BACKFILL_START_IDLE_MS = 500
+const BACKFILL_PAGE_IDLE_MS = 120
+/** How long loadAll waits for the initial window to land before concluding
+ * the view settled on its own (attempts × RETRY_BACKOFF_MS). */
+const LOAD_WINDOW_WAIT_ATTEMPTS = 25
 const FLASH_MS = 1400
 
 const delay = (ms: number): Promise<void> => new Promise(resolve => { setTimeout(resolve, ms) })
+
+/** Yield the main thread until it goes idle (bounded by `timeoutMs`), so
+ * back-fill work never contends with the frames a conversation switch needs.
+ * requestIdleCallback fires as soon as the renderer is quiet and at most
+ * `timeoutMs` later; the setTimeout fallback keeps non-DOM hosts moving. */
+function yieldToUi(timeoutMs: number): Promise<void> {
+  return new Promise(resolve => {
+    if (typeof requestIdleCallback === 'function') {
+      requestIdleCallback(() => { resolve() }, { timeout: timeoutMs })
+    } else {
+      setTimeout(resolve, Math.min(timeoutMs, 60))
+    }
+  })
+}
 
 interface ChatSnapshot {
   chat?: { order?: string[]; nodes?: Map<string, unknown> }
@@ -141,17 +164,39 @@ function createJump(service: SessionsService, sessionId: string): (key: string) 
   }
 }
 
-/** Back-fill the entire history so the rail indexes every user message. */
+/** Back-fill the entire history so the rail indexes every user message. The
+ * loop is idle-paced, not tight: one quiet frame before the first page (the
+ * switch's first paint owns the thread until then) and one between pages, so
+ * the host's per-page commits spread across background frames instead of
+ * freezing the conversation that just landed. */
 function createLoadAll(service: SessionsService, sessionId: string): (disposed: () => boolean) => Promise<void> {
   return async disposed => {
     const { session } = snapshotOf(service, sessionId)
     if (session === undefined) return
     let guard = 0
     let stalls = 0
+    // At mount the initial window may still be on its way: `hasMore` only
+    // turns true once it lands, so the hasMore check below would misread the
+    // pre-window snapshot as "nothing more" and the rail would stay empty for
+    // the whole mount (a session switch remount usually hid this). Wait the
+    // window out first — order non-empty means the view settled.
+    let windowWaits = 0
+    let started = false
     while (guard++ < LOAD_MAX_PAGES) {
       if (disposed()) return
       const snapshot = session.getSnapshot() as ChatSnapshot | undefined
-      if (snapshot === undefined || snapshot.hasMore !== true) return
+      if (snapshot === undefined || snapshot.hasMore !== true) {
+        if ((snapshot?.chat?.order?.length ?? 0) === 0 && windowWaits++ < LOAD_WINDOW_WAIT_ATTEMPTS) {
+          await delay(RETRY_BACKOFF_MS)
+          continue
+        }
+        return
+      }
+      if (!started) {
+        started = true
+        await yieldToUi(BACKFILL_START_IDLE_MS)
+        continue
+      }
       if (snapshot.loadingOlder === true) { await delay(LOADING_WAIT_MS); continue }
       const before = snapshot.chat?.order?.length ?? 0
       try { await session.loadOlder() } catch { await delay(RETRY_BACKOFF_MS) }
@@ -162,6 +207,7 @@ function createLoadAll(service: SessionsService, sessionId: string): (disposed: 
         await delay(RETRY_BACKOFF_MS)
       } else {
         stalls = 0
+        await yieldToUi(BACKFILL_PAGE_IDLE_MS)
       }
     }
   }

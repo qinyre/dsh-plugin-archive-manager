@@ -1,6 +1,6 @@
 {
   "name": "dsh-plugin-atlas",
-  "version": "0.2.0",
+  "version": "0.2.2",
   "description": "Archive manager (browse / unarchive / auto-rules) plus a Codex-style left tick rail for jumping between conversation turns. · 归档管理（浏览、取消归档、自动归档规则）与左侧对话刻度栏跳转。",
   "type": "module",
   "main": "lib/index.js",

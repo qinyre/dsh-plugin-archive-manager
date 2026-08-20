@@ -22,6 +22,7 @@
  * `loadAll` back-fills older pages until the whole history is indexed. */
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useComposerHistory } from './composer-history.ts'
 import {
   buildTicks,
   capTicks,
@@ -93,6 +94,10 @@ export function Rail(props: RailProps): React.ReactElement {
     () => capTicks(buildTicks(order ?? [], (nodes ?? new Map()) as Map<string, never>)),
     [order, nodes],
   )
+
+  // Terminal-style composer history (ArrowUp/ArrowDown recall of this
+  // session's sent messages) rides the same session-scoped subscription.
+  useComposerHistory(order, nodes, props.sessionId)
 
   const [focusIndex, setFocusIndex] = useState<number | null>(null)
   const [railBox, setRailBox] = useState<{ top: number; left: number; height: number } | null>(null)
