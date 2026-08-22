@@ -17,9 +17,20 @@
  * mini scrollbar (wheel or thumb drag), following the newest tick by
  * default. The conversation itself is never scrolled by the rail's own bar.
  *
+ * Tick data comes from two sources, joined per turn key. The server-side
+ * index (`/dsh-plugin-atlas/rail`) supplies the durable full-history column
+ * without pulling a single page through the host ChatView — driving that
+ * pagination eagerly loaded the entire conversation into a non-virtualized
+ * list whose window then persisted for the session, making every later
+ * switch into it re-render everything. The live session snapshot supplies
+ * whatever is actually loaded (fresher text) plus brand-new turns. If the
+ * index is unavailable or its keys stop matching the snapshot's context-key
+ * format, the component falls back to the legacy behavior: build ticks from
+ * the snapshot alone and back-fill the full history through `loadAll`.
+ *
  * The component is mounted per session through a session-scoped slot child;
  * `useSession` subscribes to the chat snapshot, `jump` scrolls to a node key,
- * `loadAll` back-fills older pages until the whole history is indexed. */
+ * `loadAll` back-fills older pages (fallback only). */
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useComposerHistory } from './composer-history.ts'
@@ -27,12 +38,15 @@ import {
   buildTicks,
   capTicks,
   formatRelative,
+  mergeTicks,
   nearestTickIndex,
   railGeometry,
   railThumbHeight,
   tickCenterY,
+  ticksShareKey,
   tickStyleFor,
   TICK_PITCH,
+  type Tick,
 } from './rail-core.ts'
 
 /** Ruler geometry (px): RAIL_WIDTH is the transparent pointer strip, not the
@@ -72,8 +86,10 @@ export interface RailProps {
   sessionId: string
   /** Scroll to a node key; resolves false when the row never appears. */
   jump: (key: string) => Promise<boolean>
-  /** Back-fill the full history; receives a disposed flag. */
+  /** Back-fill the full history (legacy fallback only); receives a disposed flag. */
   loadAll: ((disposed: () => boolean) => Promise<void>) | undefined
+  /** Server-side tick index for this session; rejects when unavailable. */
+  ticks?: () => Promise<readonly Tick[]>
   /** Locale lookup for aria labels and the preview bubble. */
   t: (key: string) => string
 }
@@ -90,9 +106,37 @@ export function Rail(props: RailProps): React.ReactElement {
     return chat?.nodes
   })
 
-  const ticks = useMemo(
+  const liveTicks = useMemo(
     () => capTicks(buildTicks(order ?? [], (nodes ?? new Map()) as Map<string, never>)),
     [order, nodes],
+  )
+
+  // Server-side history index. `pending` until the fetch settles (the column
+  // then shows just the live window), `ready` once it landed, `legacy` when
+  // the index is unavailable or its keys stopped matching the snapshot —
+  // legacy rebuilds ticks from the snapshot alone and back-fills through
+  // loadAll, the pre-0.2.3 behavior.
+  const [indexState, setIndexState] = useState<'pending' | 'ready' | 'legacy'>('pending')
+  const [indexed, setIndexed] = useState<readonly Tick[]>([])
+  const ticksFetcherRef = useRef(props.ticks)
+  ticksFetcherRef.current = props.ticks
+
+  useEffect(() => {
+    let cancelled = false
+    setIndexState('pending')
+    setIndexed([])
+    const fetcher = ticksFetcherRef.current
+    if (fetcher === undefined) { setIndexState('legacy'); return }
+    fetcher().then(
+      rows => { if (!cancelled) { setIndexed(rows); setIndexState('ready') } },
+      () => { if (!cancelled) setIndexState('legacy') },
+    )
+    return () => { cancelled = true }
+  }, [props.sessionId])
+
+  const ticks = useMemo(
+    () => indexState === 'ready' ? capTicks(mergeTicks(indexed, liveTicks)) : liveTicks,
+    [indexState, indexed, liveTicks],
   )
 
   // Terminal-style composer history (ArrowUp/ArrowDown recall of this
@@ -125,16 +169,29 @@ export function Rail(props: RailProps): React.ReactElement {
     setFollowTail(clamped >= max)
   }
 
-  // Back-fill full history once per session mount (indexes every message so
-  // jumps into old turns work without manual scrolling).
+  // Legacy back-fill, only while the server index is not trusted (fetch
+  // failed, old host without the inject, or a key-format mismatch below):
+  // indexes every message so jumps into old turns still work, at the cost of
+  // pulling the whole history through the ChatView.
   const loadAllRef = useRef(loadAll)
   loadAllRef.current = loadAll
   useEffect(() => {
+    if (indexState !== 'legacy') return
     const disposed = { current: false }
     const loader = loadAllRef.current
     if (loader !== undefined) void loader(() => disposed.current).catch(() => {})
     return () => { disposed.current = true }
-  }, [props.sessionId])
+  }, [props.sessionId, indexState])
+
+  // Key-format guard: once the live window has landed with at least one tick,
+  // the index must share a key with it. No overlap means a future dsh build
+  // changed its context-key shape — drop to the legacy path rather than
+  // render a column whose clicks can never land.
+  useEffect(() => {
+    if (indexState !== 'ready') return
+    if (liveTicks.length === 0) return
+    if (!ticksShareKey(indexed, liveTicks)) setIndexState('legacy')
+  }, [indexState, indexed, liveTicks])
 
   // Track the scrollport's box so the ruler hugs its left edge through
   // sidebar collapse, resize, and conversation layout shifts.

@@ -144,6 +144,36 @@ describe('atlas routes', () => {
     expect(missing.last().status).toBe(404)
   })
 
+  it('rail serves the tick index for any persisted session, archived or not', async () => {
+    const fixture = makeFixture()
+    fixture.persistence.inspect.mockImplementation(async (id: string) => ({
+      header: { id, createdAt: 10 },
+      log: [
+        { type: 'user/message', seq: 1, time: 111, surfaceOp: 'append', data: { id: 'm1', content: [{ type: 'text', text: 'question' }], source: { kind: 'user' } } },
+        { type: 'assistant/message', seq: 2, time: 112, surfaceOp: 'append', data: { turn: 1, step: 1, message: { id: 'a1', content: [{ type: 'text', text: 'answer' }] } } },
+      ],
+    }))
+    const res = makeResponse()
+    await fixture.handler('/dsh-plugin-atlas/rail')(request('GET', '/dsh-plugin-atlas/rail?sessionId=s1'), res)
+    expect(res.last().status).toBe(200)
+    expect(res.last().json<{ ticks: { key: string; reply: string }[] }>().ticks).toEqual([
+      { key: '13:input-messagem1', text: 'question', time: 111, reply: 'answer' },
+    ])
+  })
+
+  it('rail answers 400 on a malformed id and 500 when the log is unreadable', async () => {
+    const fixture = makeFixture()
+    const bad = makeResponse()
+    await fixture.handler('/dsh-plugin-atlas/rail')(request('GET', '/dsh-plugin-atlas/rail?sessionId=..%2Fetc'), bad)
+    expect(bad.last().status).toBe(400)
+
+    fixture.persistence.inspect.mockRejectedValueOnce(new Error('log gone'))
+    const dead = makeResponse()
+    await fixture.handler('/dsh-plugin-atlas/rail')(request('GET', '/dsh-plugin-atlas/rail?sessionId=s1'), dead)
+    expect(dead.last().status).toBe(500)
+    expect(dead.last().json<{ error: string }>().error).toBe('log gone')
+  })
+
   it('unarchive-batch removes ids behind the CSRF fence', async () => {
     const fixture = makeFixture()
 

@@ -5,6 +5,7 @@
 
 import { createElement } from 'react'
 import { Rail } from './rail.tsx'
+import type { Tick } from './rail-core.ts'
 import { ArchivePanel, type AtlasApi } from './ArchivePanel.tsx'
 import { zh, en } from './locales.ts'
 
@@ -164,7 +165,10 @@ function createJump(service: SessionsService, sessionId: string): (key: string) 
   }
 }
 
-/** Back-fill the entire history so the rail indexes every user message. The
+/** Back-fill the entire history so the rail indexes every user message.
+ * Legacy fallback only — since 0.2.3 the rail reads its full-history column
+ * from `/dsh-plugin-atlas/rail` (the server folds the durable log) and this
+ * runs just when that index is unavailable or its key format drifted. The
  * loop is idle-paced, not tight: one quiet frame before the first page (the
  * switch's first paint owns the thread until then) and one between pages, so
  * the host's per-page commits spread across background frames instead of
@@ -337,6 +341,12 @@ export function apply(ctx: AtlasClientContext): void {
         inject: (sessionId: string) => ({
           jump: createJump(ctx.sessions, sessionId),
           loadAll: createLoadAll(ctx.sessions, sessionId),
+          // Full-history tick index served from the durable log — no pages
+          // through the ChatView. A rejection drops the rail to its legacy
+          // snapshot + loadAll path.
+          ticks: () => fetchJson<{ ticks: Tick[] }>(
+            `/dsh-plugin-atlas/rail?sessionId=${encodeURIComponent(sessionId)}`,
+          ).then(body => body.ticks),
           t,
         }),
       },

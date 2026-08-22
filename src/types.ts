@@ -22,6 +22,9 @@ export interface EventLike {
   readonly seq: number
   readonly time: number
   readonly data: unknown
+  /** Surface marker on message-producing events: 'append' or a replace op.
+   * The rail index only folds append-origin rows (the human transcript). */
+  readonly surfaceOp?: unknown
 }
 
 /** sessionPersistence structural subset. */

@@ -7,6 +7,7 @@ import {
   buildTicks,
   capTicks,
   formatRelative,
+  mergeTicks,
   nearestTickIndex,
   railGeometry,
   railThumbHeight,
@@ -15,6 +16,7 @@ import {
   TICK_FOCUS_WIDTH,
   TICK_PITCH,
   tickCenterY,
+  ticksShareKey,
   tickStyleFor,
   tickTierFor,
   tickWidthFor,
@@ -108,6 +110,39 @@ describe('capTicks', () => {
     expect(capped.length).toBe(100)
     expect(capped[capped.length - 1]?.key).toBe('k999')
     expect(new Set(capped).size).toBe(capped.length)
+  })
+})
+
+describe('mergeTicks', () => {
+  const server: Tick[] = [
+    { key: 'old', text: 'indexed old', time: 1, reply: '' },
+    { key: 'mid', text: 'indexed mid (capped)', time: 2, reply: 'r' },
+  ]
+  const live: Tick[] = [
+    { key: 'mid', text: 'loaded mid — full text', time: 2, reply: 'fuller' },
+    { key: 'new', text: 'fresh message', time: 3, reply: '' },
+  ]
+  it('keeps index order, lets loaded turns win, appends live-only turns', () => {
+    expect(mergeTicks(server, live)).toEqual([
+      { key: 'old', text: 'indexed old', time: 1, reply: '' },
+      { key: 'mid', text: 'loaded mid — full text', time: 2, reply: 'fuller' },
+      { key: 'new', text: 'fresh message', time: 3, reply: '' },
+    ])
+  })
+  it('degrades to the live side alone when the index is empty or absent', () => {
+    expect(mergeTicks([], live)).toEqual(live)
+  })
+})
+
+describe('ticksShareKey', () => {
+  const tick = (key: string): Tick => ({ key, text: '', time: 0, reply: '' })
+  it('detects overlap between the index and the loaded window', () => {
+    expect(ticksShareKey([tick('a'), tick('b')], [tick('x'), tick('b')])).toBe(true)
+    expect(ticksShareKey([tick('a')], [tick('b')])).toBe(false)
+  })
+  it('answers false while either side is empty (inconclusive)', () => {
+    expect(ticksShareKey([], [tick('a')])).toBe(false)
+    expect(ticksShareKey([tick('a')], [])).toBe(false)
   })
 })
 

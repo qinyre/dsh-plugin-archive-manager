@@ -6,6 +6,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import { readJsonBody, sameOrigin, sendJson } from './http.ts'
 import { buildArchiveRows, buildPreview, unarchiveIds, UnarchiveUnsupportedError } from './archive.ts'
 import { loadRules, runAutoArchive, saveRules, validateRules } from './autorules.ts'
+import { railTicksOfLog } from './rail-index.ts'
 import type { AtlasHost, AutoRules } from './types.ts'
 
 /** Session ids are opaque strings; bound shape to keep payloads tame. */
@@ -99,6 +100,22 @@ export function mountAtlasRoutes(host: AtlasHost, options: AtlasRouteOptions = {
           return
         }
         sendJson(response, 200, await buildPreview(host.sessionPersistence, id))
+      },
+    }),
+
+    host.webServer.register({
+      kind: 'exact',
+      path: '/dsh-plugin-atlas/rail',
+      handler: async (request, response) => {
+        if (request.method !== 'GET') { response.writeHead(405, { allow: 'GET' }); response.end(); return }
+        const id = new URL(request.url ?? '/', 'http://dsh').searchParams.get('sessionId') ?? ''
+        if (!SESSION_ID_RE.test(id)) { replyError(response, 400, 'invalid sessionId'); return }
+        try {
+          const inspection = await host.sessionPersistence.inspect(id)
+          sendJson(response, 200, { ticks: railTicksOfLog(inspection.log) })
+        } catch (error) {
+          replyError(response, 500, error instanceof Error ? error.message : String(error))
+        }
       },
     }),
 

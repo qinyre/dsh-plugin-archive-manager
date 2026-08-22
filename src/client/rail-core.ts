@@ -114,6 +114,34 @@ export function capTicks(ticks: readonly Tick[], max = MAX_TICKS): Tick[] {
   return out
 }
 
+/**
+ * Merge the server-side index with the live snapshot's ticks. A turn whose
+ * key is loaded renders from the snapshot (full uncapped text — the index
+ * caps previews for transport); turns only the index knows keep their
+ * indexed row. Live-only entries (messages newer than the index read) append
+ * in order. The index supplies the durable full-history ordering, so the
+ * merged column stays chronological without either side being complete.
+ */
+export function mergeTicks(server: readonly Tick[], live: readonly Tick[]): Tick[] {
+  const liveByKey = new Map(live.map(tick => [tick.key, tick]))
+  const merged = server.map(tick => liveByKey.get(tick.key) ?? tick)
+  const indexed = new Set(server.map(tick => tick.key))
+  for (const tick of live) {
+    if (!indexed.has(tick.key)) merged.push(tick)
+  }
+  return merged
+}
+
+/** Whether at least one indexed key also exists among the live ticks — the
+ * rail's check that the server key format still matches what the snapshot
+ * actually renders. Empty on either side counts as no overlap (the caller
+ * waits for a real window before drawing conclusions). */
+export function ticksShareKey(server: readonly Tick[], live: readonly Tick[]): boolean {
+  if (server.length === 0 || live.length === 0) return false
+  const liveKeys = new Set(live.map(tick => tick.key))
+  return server.some(tick => liveKeys.has(tick.key))
+}
+
 // ---------------------------------------------------------------------------
 // Column geometry
 //
