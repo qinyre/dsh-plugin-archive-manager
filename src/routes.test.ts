@@ -174,6 +174,20 @@ describe('atlas routes', () => {
     expect(dead.last().json<{ error: string }>().error).toBe('log gone')
   })
 
+  it('rail folds the current-build {meta, events} inspection shape too', async () => {
+    const fixture = makeFixture()
+    fixture.persistence.inspect.mockResolvedValueOnce({
+      meta: { id: 's1', createdAt: 10 },
+      events: [
+        { type: 'user/message', seq: 1, time: 111, surfaceOp: 'append', data: { id: 'm1', content: [{ type: 'text', text: 'question' }], source: { kind: 'user' } } },
+      ],
+    })
+    const res = makeResponse()
+    await fixture.handler('/dsh-plugin-atlas/rail')(request('GET', '/dsh-plugin-atlas/rail?sessionId=s1'), res)
+    expect(res.last().status).toBe(200)
+    expect(res.last().json<{ ticks: { key: string }[] }>().ticks).toEqual([{ key: '13:input-messagem1', text: 'question', time: 111, reply: '' }])
+  })
+
   it('unarchive-batch removes ids behind the CSRF fence', async () => {
     const fixture = makeFixture()
 

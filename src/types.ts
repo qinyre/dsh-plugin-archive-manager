@@ -27,10 +27,24 @@ export interface EventLike {
   readonly surfaceOp?: unknown
 }
 
+/**
+ * What `sessionPersistence.inspect` resolves to. Current dsh builds return
+ * `{ meta, events }`; the plugin originally guessed `{ header, log }` — a
+ * shape the real service never had, which made every preview degrade to the
+ * header-only fallback (rows rendered raw session ids). Both field pairs are
+ * accepted; `inspectionLogOf`/`inspectionHeaderOf` normalize.
+ */
+export interface SessionInspectionLike {
+  readonly meta?: HeaderLike
+  readonly header?: HeaderLike
+  readonly events?: readonly EventLike[]
+  readonly log?: readonly EventLike[]
+}
+
 /** sessionPersistence structural subset. */
 export interface PersistenceLike {
   list(signal?: AbortSignal): Promise<HeaderLike[]>
-  inspect(id: string, signal?: AbortSignal): Promise<{ header: HeaderLike; log: EventLike[] }>
+  inspect(id: string, signal?: AbortSignal): Promise<SessionInspectionLike>
 }
 
 /** One workspace row as the archive list sees it. */

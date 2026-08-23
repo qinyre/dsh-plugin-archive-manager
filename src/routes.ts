@@ -4,7 +4,7 @@
 
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { readJsonBody, sameOrigin, sendJson } from './http.ts'
-import { buildArchiveRows, buildPreview, unarchiveIds, UnarchiveUnsupportedError } from './archive.ts'
+import { buildArchiveRows, buildPreview, inspectionLogOf, unarchiveIds, UnarchiveUnsupportedError } from './archive.ts'
 import { loadRules, runAutoArchive, saveRules, validateRules } from './autorules.ts'
 import { railTicksOfLog } from './rail-index.ts'
 import type { AtlasHost, AutoRules } from './types.ts'
@@ -112,7 +112,7 @@ export function mountAtlasRoutes(host: AtlasHost, options: AtlasRouteOptions = {
         if (!SESSION_ID_RE.test(id)) { replyError(response, 400, 'invalid sessionId'); return }
         try {
           const inspection = await host.sessionPersistence.inspect(id)
-          sendJson(response, 200, { ticks: railTicksOfLog(inspection.log) })
+          sendJson(response, 200, { ticks: railTicksOfLog(inspectionLogOf(inspection)) })
         } catch (error) {
           replyError(response, 500, error instanceof Error ? error.message : String(error))
         }

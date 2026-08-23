@@ -3,7 +3,7 @@
 
 import { describe, expect, it, vi } from 'vitest'
 import {
-  buildArchiveRows, previewOfLog, textOfUserMessage, unarchiveIds, UnarchiveUnsupportedError,
+  buildArchiveRows, buildPreview, inspectionLogOf, previewOfLog, textOfUserMessage, unarchiveIds, UnarchiveUnsupportedError,
 } from './archive.ts'
 import type { EventLike, RegistryWriteSurface } from './types.ts'
 
@@ -66,6 +66,37 @@ describe('previewOfLog', () => {
   })
   it('handles empty logs', () => {
     expect(previewOfLog([])).toEqual({ title: null, lastUser: null, turns: 0, lastActivityMs: null })
+  })
+})
+
+describe('inspectionLogOf', () => {
+  it('reads current-build {meta, events} and legacy {header, log} alike', () => {
+    const events: EventLike[] = [{ type: 'turn/end', seq: 1, time: 1, data: {} }]
+    expect(inspectionLogOf({ meta: { id: 's', createdAt: 1 }, events })).toBe(events)
+    expect(inspectionLogOf({ header: { id: 's', createdAt: 1 }, log: events })).toBe(events)
+    expect(inspectionLogOf({})).toEqual([])
+  })
+})
+
+describe('buildPreview', () => {
+  const log: EventLike[] = [
+    { type: 'session/title', seq: 1, time: 1, data: { title: '真名字' } },
+    { type: 'user/message', seq: 2, time: 2, surfaceOp: 'append', data: { id: 'm1', content: [{ type: 'text', text: 'hello' }] } },
+  ]
+  it('derives facts from the current-build inspection shape', async () => {
+    const persistence = { inspect: vi.fn(async () => ({ meta: { id: 's1', createdAt: 1 }, events: log })) }
+    const preview = await buildPreview(persistence as never, 's1')
+    expect(preview).toMatchObject({ id: 's1', title: '真名字', turns: 0 })
+  })
+  it('still reads the legacy inspection shape', async () => {
+    const persistence = { inspect: vi.fn(async () => ({ header: { id: 's1', createdAt: 1 }, log })) }
+    expect((await buildPreview(persistence as never, 's1')).title).toBe('真名字')
+  })
+  it('degrades to header-only facts when inspect throws', async () => {
+    const persistence = { inspect: vi.fn(async () => { throw new Error('boom') }) }
+    expect(await buildPreview(persistence as never, 's1')).toEqual({
+      id: 's1', title: null, lastUser: null, turns: 0, lastActivityMs: null,
+    })
   })
 })
 

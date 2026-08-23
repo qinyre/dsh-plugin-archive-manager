@@ -10,6 +10,7 @@
 import { readFile, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { inspectionHeaderOf, inspectionLogOf } from './archive.ts'
 import type { AutoCandidate, AutoRules, AtlasHost, PersistenceLike, WorkspaceLike } from './types.ts'
 
 /** Defaults: the whole feature is opt-in. */
@@ -118,8 +119,8 @@ export function selectAutoArchive(input: SelectionInput): AutoCandidate[] {
 export async function resolveActivity(persistence: PersistenceLike, sessionId: string): Promise<number> {
   try {
     const inspection = await persistence.inspect(sessionId)
-    let last = inspection.header.createdAt
-    for (const event of inspection.log) {
+    let last = inspectionHeaderOf(inspection)?.createdAt ?? 0
+    for (const event of inspectionLogOf(inspection)) {
       if (event.time > last) last = event.time
     }
     return last

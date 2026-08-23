@@ -8,12 +8,25 @@
  * reappears in the sidebar live, without a restart. */
 
 import type {
-  ArchivePreview, ArchiveRow, EventLike, HeaderLike, PersistenceLike,
+  ArchivePreview, ArchiveRow, EventLike, HeaderLike, PersistenceLike, SessionInspectionLike,
   RegistryWriteSurface, WorkspaceLike,
 } from './types.ts'
 
 /** Character cap for preview/title extraction. */
 export const PREVIEW_CHARS = 200
+
+/** The event log of an inspection result, whichever field pair carries it
+ * (current dsh builds say `events`, the plugin's original guess said `log`). */
+export function inspectionLogOf(inspection: SessionInspectionLike): readonly EventLike[] {
+  if (Array.isArray(inspection.events)) return inspection.events
+  if (Array.isArray(inspection.log)) return inspection.log
+  return []
+}
+
+/** The header of an inspection result, whichever field pair carries it. */
+export function inspectionHeaderOf(inspection: SessionInspectionLike): HeaderLike | undefined {
+  return inspection.meta ?? inspection.header
+}
 
 /** Extract readable text from a user-message event payload, defensively:
  * the wire shape (`content` block list) plus plain-string variants. */
@@ -125,7 +138,7 @@ export async function buildPreview(
 ): Promise<ArchivePreview> {
   try {
     const inspection = await persistence.inspect(sessionId)
-    return { id: sessionId, ...previewOfLog(inspection.log) }
+    return { id: sessionId, ...previewOfLog(inspectionLogOf(inspection)) }
   } catch {
     return { id: sessionId, title: null, lastUser: null, turns: 0, lastActivityMs: null }
   }
