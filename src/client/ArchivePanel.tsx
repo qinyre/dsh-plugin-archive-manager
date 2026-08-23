@@ -90,8 +90,9 @@ export function ArchivePanel(props: ArchivePanelProps): React.ReactElement {
     return rows.filter(row =>
       (row.workspaceTitle ?? '').toLowerCase().includes(needle)
       || (row.cwd ?? '').toLowerCase().includes(needle)
+      || (previews.get(row.id)?.title ?? '').toLowerCase().includes(needle)
       || row.id.toLowerCase().includes(needle))
-  }, [rows, query])
+  }, [rows, query, previews])
 
   useEffect(() => {
     const pending = visible.slice(0, 60).filter(row => !previews.has(row.id))

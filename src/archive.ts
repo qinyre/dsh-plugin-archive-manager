@@ -32,14 +32,21 @@ export function textOfUserMessage(data: unknown): string {
   return out.trim()
 }
 
-/** Fold a persisted log into the preview facts the drawer shows. */
+/** Fold a persisted log into the preview facts the drawer shows. The title
+ * prefers the log's accepted `session/title` event — the same durable name
+ * the sidebar shows, stable across renames — and falls back to the first
+ * user message (often pasted code, which read as gibberish as a row name)
+ * only for sessions that never earned one. */
 export function previewOfLog(events: readonly EventLike[]): Omit<ArchivePreview, 'id'> {
   let title: string | null = null
   let lastUser: string | null = null
   let turns = 0
   let lastActivityMs: number | null = null
   for (const event of events) {
-    if (event.type === 'user/message') {
+    if (event.type === 'session/title') {
+      const accepted = (event.data as { title?: unknown } | null)?.title
+      if (typeof accepted === 'string' && accepted.trim() !== '') title = accepted.slice(0, PREVIEW_CHARS)
+    } else if (event.type === 'user/message') {
       const text = textOfUserMessage(event.data)
       if (text !== '') {
         if (title === null) title = text.slice(0, PREVIEW_CHARS)

@@ -38,6 +38,27 @@ describe('previewOfLog', () => {
       title: 'first question', lastUser: 'second question', turns: 2, lastActivityMs: 1_500,
     })
   })
+  it('prefers the accepted session/title event over the first-prompt fallback', () => {
+    const log: EventLike[] = [
+      userEvent(1, 'const x = 1; fix(this.mess)', 1_000),
+      { type: 'session/title', seq: 2, time: 1_100, data: { title: '修复构建脚本', sources: [1], provenance: 'fallback' } },
+      userEvent(3, 'follow-up', 1_200),
+    ]
+    expect(previewOfLog(log).title).toBe('修复构建脚本')
+  })
+  it('takes the newest title event (renames win) and ignores empty ones', () => {
+    const log: EventLike[] = [
+      userEvent(1, 'real first prompt'),
+      { type: 'session/title', seq: 2, time: 1, data: { title: '  ' } },
+      { type: 'session/title', seq: 3, time: 2, data: { title: '旧名字' } },
+      { type: 'session/title', seq: 4, time: 3, data: { title: '新名字' } },
+      { type: 'session/title', seq: 5, time: 4, data: {} },
+    ]
+    expect(previewOfLog(log).title).toBe('新名字')
+  })
+  it('falls back to the first user message when no title event exists', () => {
+    expect(previewOfLog([userEvent(1, 'plain start')]).title).toBe('plain start')
+  })
   it('truncates long previews', () => {
     const long = 'x'.repeat(500)
     const preview = previewOfLog([userEvent(1, long)])
