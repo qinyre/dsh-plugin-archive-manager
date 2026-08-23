@@ -120,6 +120,14 @@ describe.skipIf(process.env.DSH_ATLAS_PLUGIN_SMOKE !== '1' || !guard || !nodeOk)
     const preview = await fetch(`${origin}/dsh-plugin-atlas/preview?sessionId=nope`)
     expect(preview.status).toBe(404)
 
+    // rail index route on the real host: malformed id rejected, unknown id
+    // surfaces the persistence error as JSON (mounted, not a crash)
+    const railBad = await fetch(`${origin}/dsh-plugin-atlas/rail?sessionId=..%2Fetc`)
+    expect(railBad.status).toBe(400)
+    const railUnknown = await fetch(`${origin}/dsh-plugin-atlas/rail?sessionId=nope`)
+    expect(railUnknown.status).toBe(500)
+    expect(await railUnknown.json()).toMatchObject({ error: expect.any(String) })
+
     // cross-origin POST is fenced off
     const csrf = await fetch(`${origin}/dsh-plugin-atlas/unarchive-batch`, {
       method: 'POST',
