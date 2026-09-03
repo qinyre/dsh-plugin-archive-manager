@@ -8,8 +8,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PassThrough } from 'node:stream'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { mountAtlasRoutes } from './routes.ts'
-import type { AtlasHost, AutoRules } from './types.ts'
+import { mountArchiveRoutes } from './routes.ts'
+import type { ArchiveHost, AutoRules } from './types.ts'
 
 interface Captured {
   status: number
@@ -71,7 +71,7 @@ interface Fixture {
 }
 
 const makeFixture = (): Fixture => {
-  const home = mkdtempSync(join(tmpdir(), 'atlas-routes-'))
+  const home = mkdtempSync(join(tmpdir(), 'archive-routes-'))
   tempRoots.push(home)
 
   const registry = {
@@ -94,12 +94,12 @@ const makeFixture = (): Fixture => {
   const rulesChanged = vi.fn()
 
   const capturing: { path: string; handler: (req: FakeRequest, res: ReturnType<typeof makeResponse>) => Promise<void> | void }[] = []
-  const host: AtlasHost = {
+  const host: ArchiveHost = {
     webServer: { register: route => { capturing.push(route as unknown as typeof capturing[number]); return () => undefined } },
     workspaceRegistry: registry,
     sessionPersistence: persistence,
   }
-  mountAtlasRoutes(host, { dshHome: home, onRulesChanged: rulesChanged })
+  mountArchiveRoutes(host, { dshHome: home, onRulesChanged: rulesChanged })
 
   return {
     handler: path => capturing.find(route => route.path === path)?.handler ?? (() => { throw new Error(`no route ${path}`) }),
@@ -110,11 +110,11 @@ const makeFixture = (): Fixture => {
   }
 }
 
-describe('atlas routes', () => {
+describe('archive-manager routes', () => {
   it('status reports capabilities and rules', async () => {
     const fixture = makeFixture()
     const res = makeResponse()
-    await fixture.handler('/dsh-plugin-atlas/status')(request('GET', '/dsh-plugin-atlas/status'), res)
+    await fixture.handler('/dsh-plugin-archive-manager/status')(request('GET', '/dsh-plugin-archive-manager/status'), res)
     const body = res.last().json<{ ok: boolean; unarchiveSupported: boolean; archivedCount: number; rules: { enabled: boolean } }>()
     expect(res.last().status).toBe(200)
     expect(body.ok).toBe(true)
@@ -126,7 +126,7 @@ describe('atlas routes', () => {
   it('list joins rows with workspace accounting', async () => {
     const fixture = makeFixture()
     const res = makeResponse()
-    await fixture.handler('/dsh-plugin-atlas/list')(request('GET', '/dsh-plugin-atlas/list'), res)
+    await fixture.handler('/dsh-plugin-archive-manager/list')(request('GET', '/dsh-plugin-archive-manager/list'), res)
     const body = res.last().json<{ rows: { id: string; workspaceTitle: string | null }[] }>()
     expect(body.rows.map(row => row.id)).toEqual(['s1', 's2'])
     expect(body.rows[1]?.workspaceTitle).toBe('Proj')
@@ -135,75 +135,34 @@ describe('atlas routes', () => {
   it('preview serves only archived sessions', async () => {
     const fixture = makeFixture()
     const ok = makeResponse()
-    await fixture.handler('/dsh-plugin-atlas/preview')(request('GET', '/dsh-plugin-atlas/preview?sessionId=s1'), ok)
+    await fixture.handler('/dsh-plugin-archive-manager/preview')(request('GET', '/dsh-plugin-archive-manager/preview?sessionId=s1'), ok)
     expect(ok.last().status).toBe(200)
     expect(ok.last().json<{ title: string }>().title).toBe('hello s1')
 
     const missing = makeResponse()
-    await fixture.handler('/dsh-plugin-atlas/preview')(request('GET', '/dsh-plugin-atlas/preview?sessionId=never'), missing)
+    await fixture.handler('/dsh-plugin-archive-manager/preview')(request('GET', '/dsh-plugin-archive-manager/preview?sessionId=never'), missing)
     expect(missing.last().status).toBe(404)
   })
 
-  it('rail serves the tick index for any persisted session, archived or not', async () => {
-    const fixture = makeFixture()
-    fixture.persistence.inspect.mockImplementation(async (id: string) => ({
-      header: { id, createdAt: 10 },
-      log: [
-        { type: 'user/message', seq: 1, time: 111, surfaceOp: 'append', data: { id: 'm1', content: [{ type: 'text', text: 'question' }], source: { kind: 'user' } } },
-        { type: 'assistant/message', seq: 2, time: 112, surfaceOp: 'append', data: { turn: 1, step: 1, message: { id: 'a1', content: [{ type: 'text', text: 'answer' }] } } },
-      ],
-    }))
-    const res = makeResponse()
-    await fixture.handler('/dsh-plugin-atlas/rail')(request('GET', '/dsh-plugin-atlas/rail?sessionId=s1'), res)
-    expect(res.last().status).toBe(200)
-    expect(res.last().json<{ ticks: { key: string; reply: string }[] }>().ticks).toEqual([
-      { key: '13:input-messagem1', text: 'question', time: 111, reply: 'answer' },
-    ])
-  })
 
-  it('rail answers 400 on a malformed id and 500 when the log is unreadable', async () => {
-    const fixture = makeFixture()
-    const bad = makeResponse()
-    await fixture.handler('/dsh-plugin-atlas/rail')(request('GET', '/dsh-plugin-atlas/rail?sessionId=..%2Fetc'), bad)
-    expect(bad.last().status).toBe(400)
 
-    fixture.persistence.inspect.mockRejectedValueOnce(new Error('log gone'))
-    const dead = makeResponse()
-    await fixture.handler('/dsh-plugin-atlas/rail')(request('GET', '/dsh-plugin-atlas/rail?sessionId=s1'), dead)
-    expect(dead.last().status).toBe(500)
-    expect(dead.last().json<{ error: string }>().error).toBe('log gone')
-  })
-
-  it('rail folds the current-build {meta, events} inspection shape too', async () => {
-    const fixture = makeFixture()
-    fixture.persistence.inspect.mockResolvedValueOnce({
-      meta: { id: 's1', createdAt: 10 },
-      events: [
-        { type: 'user/message', seq: 1, time: 111, surfaceOp: 'append', data: { id: 'm1', content: [{ type: 'text', text: 'question' }], source: { kind: 'user' } } },
-      ],
-    })
-    const res = makeResponse()
-    await fixture.handler('/dsh-plugin-atlas/rail')(request('GET', '/dsh-plugin-atlas/rail?sessionId=s1'), res)
-    expect(res.last().status).toBe(200)
-    expect(res.last().json<{ ticks: { key: string }[] }>().ticks).toEqual([{ key: '13:input-messagem1', text: 'question', time: 111, reply: '' }])
-  })
 
   it('unarchive-batch removes ids behind the CSRF fence', async () => {
     const fixture = makeFixture()
 
     const blocked = makeResponse()
-    await fixture.handler('/dsh-plugin-atlas/unarchive-batch')(
-      request('POST', '/dsh-plugin-atlas/unarchive-batch', { origin: 'http://evil', body: '{"sessionIds":["s1"]}' }), blocked)
+    await fixture.handler('/dsh-plugin-archive-manager/unarchive-batch')(
+      request('POST', '/dsh-plugin-archive-manager/unarchive-batch', { origin: 'http://evil', body: '{"sessionIds":["s1"]}' }), blocked)
     expect(blocked.last().status).toBe(403)
 
     const badPayload = makeResponse()
-    await fixture.handler('/dsh-plugin-atlas/unarchive-batch')(
-      request('POST', '/dsh-plugin-atlas/unarchive-batch', { origin: 'http://dsh.local', body: '{"sessionIds":[]}' }), badPayload)
+    await fixture.handler('/dsh-plugin-archive-manager/unarchive-batch')(
+      request('POST', '/dsh-plugin-archive-manager/unarchive-batch', { origin: 'http://dsh.local', body: '{"sessionIds":[]}' }), badPayload)
     expect(badPayload.last().status).toBe(400)
 
     const ok = makeResponse()
-    await fixture.handler('/dsh-plugin-atlas/unarchive-batch')(
-      request('POST', '/dsh-plugin-atlas/unarchive-batch', { origin: 'http://dsh.local', body: '{"sessionIds":["s1","s2"]}' }), ok)
+    await fixture.handler('/dsh-plugin-archive-manager/unarchive-batch')(
+      request('POST', '/dsh-plugin-archive-manager/unarchive-batch', { origin: 'http://dsh.local', body: '{"sessionIds":["s1","s2"]}' }), ok)
     expect(ok.last().status).toBe(200)
     expect(ok.last().json<{ ok: boolean; archivedSessionIds: string[] }>().archivedSessionIds).toEqual([])
     expect(fixture.registry.archivedSessionIds).toEqual([])
@@ -213,14 +172,14 @@ describe('atlas routes', () => {
     const fixture = makeFixture()
 
     const invalid = makeResponse()
-    await fixture.handler('/dsh-plugin-atlas/rules')(
-      request('POST', '/dsh-plugin-atlas/rules', { origin: 'http://dsh.local', body: '{"rules":{"enabled":true,"maxIdleDays":-5}}' }), invalid)
+    await fixture.handler('/dsh-plugin-archive-manager/rules')(
+      request('POST', '/dsh-plugin-archive-manager/rules', { origin: 'http://dsh.local', body: '{"rules":{"enabled":true,"maxIdleDays":-5}}' }), invalid)
     expect(invalid.last().status).toBe(400)
     expect(fixture.rulesChanged).not.toHaveBeenCalled()
 
     const valid = makeResponse()
-    await fixture.handler('/dsh-plugin-atlas/rules')(
-      request('POST', '/dsh-plugin-atlas/rules', {
+    await fixture.handler('/dsh-plugin-archive-manager/rules')(
+      request('POST', '/dsh-plugin-archive-manager/rules', {
         origin: 'http://dsh.local',
         body: '{"rules":{"enabled":true,"maxIdleDays":7,"perWorkspaceKeep":null}}',
       }), valid)
@@ -228,15 +187,15 @@ describe('atlas routes', () => {
     expect(fixture.rulesChanged).toHaveBeenCalledWith({ enabled: true, maxIdleDays: 7, perWorkspaceKeep: null } satisfies AutoRules)
 
     const readBack = makeResponse()
-    await fixture.handler('/dsh-plugin-atlas/rules')(request('GET', '/dsh-plugin-atlas/rules'), readBack)
+    await fixture.handler('/dsh-plugin-archive-manager/rules')(request('GET', '/dsh-plugin-archive-manager/rules'), readBack)
     expect(readBack.last().json<{ rules: AutoRules }>().rules).toEqual({ enabled: true, maxIdleDays: 7, perWorkspaceKeep: null })
   })
 
   it('autorun honors dry-run default and returns policy output', async () => {
     const fixture = makeFixture()
     const res = makeResponse()
-    await fixture.handler('/dsh-plugin-atlas/autorun')(
-      request('POST', '/dsh-plugin-atlas/autorun', { origin: 'http://dsh.local', body: '{"dryRun":true}' }), res)
+    await fixture.handler('/dsh-plugin-archive-manager/autorun')(
+      request('POST', '/dsh-plugin-archive-manager/autorun', { origin: 'http://dsh.local', body: '{"dryRun":true}' }), res)
     const body = res.last().json<{ dryRun: boolean; selected: unknown[]; archived: string[] }>()
     expect(res.last().status).toBe(200)
     expect(body.dryRun).toBe(true)
@@ -246,7 +205,7 @@ describe('atlas routes', () => {
   it('method gating answers 405', async () => {
     const fixture = makeFixture()
     const res = makeResponse()
-    await fixture.handler('/dsh-plugin-atlas/list')(request('POST', '/dsh-plugin-atlas/list', { origin: 'http://dsh.local', body: '{}' }), res)
+    await fixture.handler('/dsh-plugin-archive-manager/list')(request('POST', '/dsh-plugin-archive-manager/list', { origin: 'http://dsh.local', body: '{}' }), res)
     expect(res.last().status).toBe(405)
   })
 })

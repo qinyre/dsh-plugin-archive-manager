@@ -1,43 +1,31 @@
-# dsh-plugin-atlas
+# dsh-plugin-archive-manager
 
-[![npm version](https://img.shields.io/npm/v/dsh-plugin-atlas)](https://www.npmjs.com/package/dsh-plugin-atlas)
+[![npm version](https://img.shields.io/npm/v/dsh-plugin-archive-manager)](https://www.npmjs.com/package/dsh-plugin-archive-manager)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
 
-为 dsh 的 Web UI 补上三件事：对话区左缘的轮次刻度尺、输入框里的 `↑/↓` 历史翻找，以及设置页里的会话归档管理。
-
-## 对话刻度尺
-
-每轮对话对应刻度尺上的一个刻度，间距固定，超出可视高度后出现自带的细滚动条。整条历史的刻度由宿主端直接索引，长会话的切换与浏览不受加载拖累。
-
-指针进入刻度尺时，最近的刻度伸长加深，邻近刻度随之递减伸缩；点击刻度跳转到对应消息，目标在尚未加载的历史里就先加载再滚动定位并短暂高亮；停留处显示该轮的输入与回复预览，`Alt+↑/↓` 在轮次间逐条移动。配色跟随宿主主题。
-
-![对话刻度尺](docs/images/screenshot-rail.png)
-
-## 输入历史
-
-在输入框按 `↑`，最近发送的消息直接填入，连按向更早翻找，`↓` 返回，走回起点时恢复翻找前的草稿——和终端里翻历史命令一个手感。光标停在文本开头或末尾才触发翻找，光标在正文中时箭头照常移动，不打扰编辑。
+为 dsh 的 Web UI 补上会话归档管理：设置页的一级分区「归档管理」。本插件前身为 dsh-plugin-atlas；0.3.0 起官方 Web UI 自带对话刻度尺，插件不再内置刻度尺与输入历史，专注归档一件事，并随版更名。
 
 ## 归档管理
 
-设置页的一级分区：已归档会话按工作区分组，支持搜索与批量取消归档，还原后侧边栏实时恢复、无需重启。标题与轮次数取自会话日志本体。
+已归档会话按工作区分组，支持搜索与批量取消归档，还原后侧边栏实时恢复、无需重启。标题与轮次数取自会话日志本体。
 
 ![归档管理](docs/images/screenshot-archive.png)
 
-自动归档默认关闭，可配置「不活跃超过 N 天」与「每个工作区保留最近 M 条」，每日核查一次，执行前可试运行预览清单。
+自动归档默认关闭，可配置「不活跃超过 N 天」与「每个工作区保留最近 M 条」，每日核查一次，执行前可试运行预览清单。旧版 atlas 的自动归档规则会在升级后自动沿用。
 
 ## 安装
 
 ```sh
-dsh plugin --profile web add dsh-plugin-atlas
+dsh plugin --profile web add dsh-plugin-archive-manager
 ```
 
 也可以在 Web UI 的 设置 → 插件 里按包名安装（经 [dsh-plugin-install](https://github.com/qinyre/dsh-plugin-install)），或直接从 GitHub 装：
 
 ```sh
-dsh plugin --profile web add github:qinyre/dsh-plugin-atlas
+dsh plugin --profile web add github:qinyre/dsh-plugin-archive-manager
 ```
 
-开发时 `add file:/path/to/dsh-plugin-atlas` 可装本地检出，包内 `prepare` 脚本会自动构建。卸载把 `add` 换成 `remove` 即可。
+开发时 `add file:/path/to/dsh-plugin-archive-manager` 可装本地检出，包内 `prepare` 脚本会自动构建。卸载把 `add` 换成 `remove` 即可。从旧包名升级：先 `remove dsh-plugin-atlas` 再安装本包，归档规则无需重配。
 
 ## 安全与边界
 
@@ -59,7 +47,7 @@ pnpm run build
 端到端 smoke 默认关闭，要求同级目录存在 [deepseek-harness](https://github.com/deepseek-ai/deepseek-harness) 源码检出且 Node ≥ 22.19：
 
 ```sh
-DSH_ATLAS_PLUGIN_SMOKE=1 pnpm test
+DSH_ARCHIVE_MANAGER_PLUGIN_SMOKE=1 pnpm test
 ```
 
 它会建临时 `DSH_HOME`、把本插件装入 `web` profile、启动 `dsh web`，并逐一探测各路由。

@@ -8,14 +8,14 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   DEFAULT_RULES, loadRules, resolveActivity, runAutoArchive, saveRules, selectAutoArchive, settingsPath, validateRules,
 } from './autorules.ts'
-import type { AtlasHost, AutoRules, WorkspaceLike } from './types.ts'
+import type { ArchiveHost, AutoRules, WorkspaceLike } from './types.ts'
 
 const tempRoots: string[] = []
 afterEach(() => {
   for (const root of tempRoots.splice(0)) rmSync(root, { recursive: true, force: true })
 })
 const tempHome = (): string => {
-  const root = mkdtempSync(join(tmpdir(), 'atlas-rules-'))
+  const root = mkdtempSync(join(tmpdir(), 'archive-rules-'))
   tempRoots.push(root)
   return root
 }
@@ -26,7 +26,7 @@ describe('rules persistence', () => {
     const rules: AutoRules = { enabled: true, maxIdleDays: 7, perWorkspaceKeep: 5 }
     await saveRules(rules, home)
     expect(await loadRules(home)).toEqual(rules)
-    expect(settingsPath(home)).toBe(join(home, 'dsh-plugin-atlas.json'))
+    expect(settingsPath(home)).toBe(join(home, 'dsh-plugin-archive-manager.json'))
   })
 
   it('degrades to defaults on corrupt or missing files', async () => {
@@ -34,6 +34,17 @@ describe('rules persistence', () => {
     expect(await loadRules(home)).toEqual(DEFAULT_RULES)
     writeFileSync(settingsPath(home), '{oops', 'utf8')
     expect(await loadRules(home)).toEqual(DEFAULT_RULES)
+  })
+
+  it('falls back to the pre-rename dsh-plugin-atlas.json once the new file exists', async () => {
+    const home = tempHome()
+    const legacy: AutoRules = { enabled: true, maxIdleDays: 90, perWorkspaceKeep: null }
+    writeFileSync(join(home, 'dsh-plugin-atlas.json'), JSON.stringify(legacy), 'utf8')
+    // legacy only consulted while the new file is absent
+    expect(await loadRules(home)).toEqual(legacy)
+    const fresh: AutoRules = { enabled: false, maxIdleDays: 7, perWorkspaceKeep: 2 }
+    await saveRules(fresh, home)
+    expect(await loadRules(home)).toEqual(fresh)
   })
 })
 
@@ -143,9 +154,9 @@ describe('resolveActivity', () => {
 })
 
 describe('runAutoArchive', () => {
-  const makeHost = (): { host: AtlasHost; archivedCalls: string[] } => {
+  const makeHost = (): { host: ArchiveHost; archivedCalls: string[] } => {
     const archivedCalls: string[] = []
-    const host: AtlasHost = {
+    const host: ArchiveHost = {
       webServer: { register: () => () => {} },
       workspaceRegistry: {
         archivedSessionIds: [],

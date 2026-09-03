@@ -102,7 +102,7 @@ export function buildArchiveRows(
  * it). The message tells the user what to do. */
 export class UnarchiveUnsupportedError extends Error {
   constructor() {
-    super('this dsh build exposes no workspace-registry state writer; unarchive is unsupported — update dsh and dsh-plugin-atlas together')
+    super('this dsh build exposes no workspace-registry state writer; unarchive is unsupported — update dsh and dsh-plugin-archive-manager together')
     this.name = 'UnarchiveUnsupportedError'
   }
 }

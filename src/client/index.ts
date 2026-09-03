@@ -1,16 +1,14 @@
-/** dsh-plugin-atlas client entry: the Settings archive-management section,
- * the conversation tick rail, and their shared locale + CSS. Both surfaces
- * talk to the host half through same-origin fetch on /dsh-plugin-atlas/*
- * (registered by src/routes.ts). */
+/** dsh-plugin-archive-manager client entry: the Settings archive-management
+ * section and its locale + CSS. The surface talks to the host half through
+ * same-origin fetch on /dsh-plugin-archive-manager/* (registered by
+ * src/routes.ts). */
 
 import { createElement } from 'react'
-import { Rail } from './rail.tsx'
-import type { Tick } from './rail-core.ts'
-import { ArchivePanel, type AtlasApi } from './ArchivePanel.tsx'
+import { ArchivePanel, type ArchiveApi } from './ArchivePanel.tsx'
 import { zh, en } from './locales.ts'
 
 /** Locale dictionary namespace owned by this plugin. */
-export const NS = 'atlas'
+export const NS = 'archive-manager'
 
 /** The `t` function bound by the locale service. */
 export interface Translate {
@@ -27,20 +25,11 @@ interface LocaleService {
   register(namespace: string, dicts: { zh: Record<string, string>; en: Record<string, string> }): unknown
   bind(namespace: string): Translate
 }
-/** A bound live session (the runtime's binding target). */
-interface BoundSession {
-  getSnapshot(): unknown
-  loadOlder(): Promise<unknown>
-}
-interface SessionsService {
-  binding(sessionId: string): { session?: BoundSession } | undefined
-}
 
-interface AtlasClientContext {
+interface ArchiveClientContext {
   effect(callback: () => unknown, label?: string): void
   locale: LocaleService
   slots: SlotsService
-  sessions: SessionsService
 }
 
 // ---------------------------------------------------------------------------
@@ -56,164 +45,18 @@ async function fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
 const postJson = <T>(path: string, body: unknown): Promise<T> =>
   fetchJson<T>(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
 
-function makeApi(): AtlasApi {
+function makeApi(): ArchiveApi {
   return {
-    list: () => fetchJson<{ rows: import('../types.ts').ArchiveRow[] }>('/dsh-plugin-atlas/list'),
+    list: () => fetchJson<{ rows: import('../types.ts').ArchiveRow[] }>('/dsh-plugin-archive-manager/list'),
     preview: (sessionId: string) => fetchJson<import('../types.ts').ArchivePreview>(
-      `/dsh-plugin-atlas/preview?sessionId=${encodeURIComponent(sessionId)}`),
+      `/dsh-plugin-archive-manager/preview?sessionId=${encodeURIComponent(sessionId)}`),
     unarchiveBatch: (sessionIds: string[]) =>
-      postJson<{ archivedSessionIds: string[] }>('/dsh-plugin-atlas/unarchive-batch', { sessionIds }),
-    rules: () => fetchJson<{ rules: import('../types.ts').AutoRules }>('/dsh-plugin-atlas/rules'),
+      postJson<{ archivedSessionIds: string[] }>('/dsh-plugin-archive-manager/unarchive-batch', { sessionIds }),
+    rules: () => fetchJson<{ rules: import('../types.ts').AutoRules }>('/dsh-plugin-archive-manager/rules'),
     saveRules: (rules: import('../types.ts').AutoRules) =>
-      postJson<{ rules: import('../types.ts').AutoRules }>('/dsh-plugin-atlas/rules', { rules }),
+      postJson<{ rules: import('../types.ts').AutoRules }>('/dsh-plugin-archive-manager/rules', { rules }),
     autorun: (dryRun: boolean) =>
-      postJson<{ archived: string[]; selected: unknown[] }>('/dsh-plugin-atlas/autorun', { dryRun }),
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Jump / loadAll factories (session-scoped, robust against pagination and
-// async DOM commits — the same battle-tested shape the market rails use)
-
-const JUMP_LOOP_CAP = 120
-const DOM_POLL_ATTEMPTS = 20
-const DOM_POLL_DELAY = 50
-const RETRY_BACKOFF_MS = 200
-const LOADING_WAIT_MS = 50
-const LOAD_MAX_PAGES = 400
-const LOAD_MAX_STALLS = 5
-/** Back-fill pacing: the conversation list is not virtualized, so every page
- * lands as a full host re-commit. Fired back-to-back at switch time they
- * freeze the UI; spaced over idle frames the switch stays responsive while
- * the rail still indexes the whole history in the background. */
-const BACKFILL_START_IDLE_MS = 500
-const BACKFILL_PAGE_IDLE_MS = 120
-/** How long loadAll waits for the initial window to land before concluding
- * the view settled on its own (attempts × RETRY_BACKOFF_MS). */
-const LOAD_WINDOW_WAIT_ATTEMPTS = 25
-const FLASH_MS = 1400
-
-const delay = (ms: number): Promise<void> => new Promise(resolve => { setTimeout(resolve, ms) })
-
-/** Yield the main thread until it goes idle (bounded by `timeoutMs`), so
- * back-fill work never contends with the frames a conversation switch needs.
- * requestIdleCallback fires as soon as the renderer is quiet and at most
- * `timeoutMs` later; the setTimeout fallback keeps non-DOM hosts moving. */
-function yieldToUi(timeoutMs: number): Promise<void> {
-  return new Promise(resolve => {
-    if (typeof requestIdleCallback === 'function') {
-      requestIdleCallback(() => { resolve() }, { timeout: timeoutMs })
-    } else {
-      setTimeout(resolve, Math.min(timeoutMs, 60))
-    }
-  })
-}
-
-interface ChatSnapshot {
-  chat?: { order?: string[]; nodes?: Map<string, unknown> }
-  hasMore?: boolean
-  loadingOlder?: boolean
-}
-
-function snapshotOf(service: SessionsService, sessionId: string): { session?: BoundSession } {
-  return service.binding(sessionId) ?? {}
-}
-
-function findRow(key: string): HTMLElement | null {
-  for (const row of Array.from(document.querySelectorAll('[data-chat-anchor-key]'))) {
-    if ((row as HTMLElement).dataset.chatAnchorKey === key) return row as HTMLElement
-  }
-  return null
-}
-
-/** Jump to one chat row; loads older pages until the target exists, then
- * scrolls (respecting reduced motion) and flashes the row. */
-function createJump(service: SessionsService, sessionId: string): (key: string) => Promise<boolean> {
-  return async key => {
-    const { session } = snapshotOf(service, sessionId)
-    if (session === undefined) return false
-    let guard = 0
-    let stalls = 0
-    while (guard++ < JUMP_LOOP_CAP) {
-      const snapshot = session.getSnapshot() as ChatSnapshot | undefined
-      if (snapshot?.chat?.nodes?.get(key) !== undefined) break
-      if (snapshot === undefined || snapshot.hasMore !== true) return false
-      if (snapshot.loadingOlder === true) { await delay(LOADING_WAIT_MS); continue }
-      const before = snapshot.chat?.order?.length ?? 0
-      try { await session.loadOlder() } catch { await delay(RETRY_BACKOFF_MS) }
-      const after = session.getSnapshot() as ChatSnapshot | undefined
-      if ((after?.chat?.order?.length ?? before) === before) {
-        stalls += 1
-        if (stalls >= 5) return false
-        await delay(RETRY_BACKOFF_MS)
-      } else {
-        stalls = 0
-      }
-    }
-    let row: HTMLElement | null = null
-    for (let attempt = 0; attempt < DOM_POLL_ATTEMPTS && row === null; attempt += 1) {
-      row = findRow(key)
-      if (row === null) await delay(DOM_POLL_DELAY)
-    }
-    if (row === null) return false
-    const reducedMotion = typeof window.matchMedia === 'function'
-      && window.matchMedia('(prefers-reduced-motion: reduce)').matches
-    row.scrollIntoView({ behavior: reducedMotion ? 'auto' : 'smooth', block: 'center' })
-    row.classList.add('dsha-flash')
-    setTimeout(() => { row?.classList.remove('dsha-flash') }, FLASH_MS)
-    return true
-  }
-}
-
-/** Back-fill the entire history so the rail indexes every user message.
- * Legacy fallback only — since 0.2.3 the rail reads its full-history column
- * from `/dsh-plugin-atlas/rail` (the server folds the durable log) and this
- * runs just when that index is unavailable or its key format drifted. The
- * loop is idle-paced, not tight: one quiet frame before the first page (the
- * switch's first paint owns the thread until then) and one between pages, so
- * the host's per-page commits spread across background frames instead of
- * freezing the conversation that just landed. */
-function createLoadAll(service: SessionsService, sessionId: string): (disposed: () => boolean) => Promise<void> {
-  return async disposed => {
-    const { session } = snapshotOf(service, sessionId)
-    if (session === undefined) return
-    let guard = 0
-    let stalls = 0
-    // At mount the initial window may still be on its way: `hasMore` only
-    // turns true once it lands, so the hasMore check below would misread the
-    // pre-window snapshot as "nothing more" and the rail would stay empty for
-    // the whole mount (a session switch remount usually hid this). Wait the
-    // window out first — order non-empty means the view settled.
-    let windowWaits = 0
-    let started = false
-    while (guard++ < LOAD_MAX_PAGES) {
-      if (disposed()) return
-      const snapshot = session.getSnapshot() as ChatSnapshot | undefined
-      if (snapshot === undefined || snapshot.hasMore !== true) {
-        if ((snapshot?.chat?.order?.length ?? 0) === 0 && windowWaits++ < LOAD_WINDOW_WAIT_ATTEMPTS) {
-          await delay(RETRY_BACKOFF_MS)
-          continue
-        }
-        return
-      }
-      if (!started) {
-        started = true
-        await yieldToUi(BACKFILL_START_IDLE_MS)
-        continue
-      }
-      if (snapshot.loadingOlder === true) { await delay(LOADING_WAIT_MS); continue }
-      const before = snapshot.chat?.order?.length ?? 0
-      try { await session.loadOlder() } catch { await delay(RETRY_BACKOFF_MS) }
-      const after = session.getSnapshot() as ChatSnapshot | undefined
-      if ((after?.chat?.order?.length ?? before) === before) {
-        stalls += 1
-        if (stalls >= LOAD_MAX_STALLS) return
-        await delay(RETRY_BACKOFF_MS)
-      } else {
-        stalls = 0
-        await yieldToUi(BACKFILL_PAGE_IDLE_MS)
-      }
-    }
+      postJson<{ archived: string[]; selected: unknown[] }>('/dsh-plugin-archive-manager/autorun', { dryRun }),
   }
 }
 
@@ -221,24 +64,6 @@ function createLoadAll(service: SessionsService, sessionId: string): (disposed: 
 // CSS
 
 const CSS = `
-.dsha-rail{position:fixed;z-index:40;pointer-events:auto}
-.dsha-rail-empty{display:none}
-.dsha-rail-view{position:absolute;inset:0;overflow:hidden}
-.dsha-rail-col{position:absolute;left:0;right:0;top:0;display:flex;flex-direction:column}
-.dsha-tick{pointer-events:auto;display:flex;align-items:center;flex:none;padding:0 0 0 2px;border:0;background:transparent;cursor:pointer}
-.dsha-tick::before{content:"";display:block;width:var(--tick-w,12px);height:2px;border-radius:1px;background:var(--dsw-alias-label-dimmed,rgba(128,134,156,.75));opacity:.85;transition:width 120ms ease-out,background-color 120ms ease-out,opacity 120ms ease-out}
-.dsha-tick.is-mid::before{background:var(--dsw-alias-label-tertiary,rgba(110,117,140,.85));opacity:.9}
-.dsha-tick.is-near::before{background:var(--dsw-alias-label-secondary,rgba(80,88,110,.9));opacity:.95}
-.dsha-tick.is-focus::before{background:var(--dsw-alias-label-primary,rgba(36,42,60,.95));opacity:1}
-.dsha-railbar-thumb{position:absolute;right:1px;width:3px;border-radius:2px;background:var(--dsw-alias-label-dimmed,rgba(128,134,156,.6));opacity:.35;cursor:grab;transition:opacity .12s ease-out}
-.dsha-railbar-thumb:hover,.dsha-railbar-thumb:active{opacity:.75;cursor:grabbing}
-@media(prefers-reduced-motion:reduce){.dsha-tick::before,.dsha-railbar-thumb{transition:none}}
-@keyframes dsha-flash{from{background-color:rgba(80,140,255,.22)}to{background-color:transparent}}
-.dsha-flash{animation:dsha-flash 1.4s ease-out 1}
-.dsha-preview{position:absolute;left:32px;z-index:41;width:320px;padding:10px 12px;border-radius:10px;background:var(--dsw-alias-bg-layer-3,#fff);border:1px solid var(--dsw-alias-border-l2,rgba(128,134,156,.35));box-shadow:0 6px 20px rgba(0,0,0,.16);pointer-events:none}
-.dsha-preview-meta{display:flex;gap:8px;align-items:center;font-size:11px;color:var(--dsw-alias-label-tertiary,rgba(110,117,140,.85));margin-bottom:6px}
-.dsha-preview-user{font-size:13px;line-height:1.5;color:var(--dsw-alias-label-primary,rgba(36,42,60,.95));display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word}
-.dsha-preview-agent{margin-top:8px;font-size:13px;line-height:1.5;color:var(--dsw-alias-label-secondary,rgba(110,117,140,.9));display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word}
 .dsha-page{display:flex;flex-direction:column;gap:12px;width:100%;max-width:760px;color:var(--dsw-alias-label-primary,#222)}
 .dsha-page-head{display:flex;align-items:center;gap:8px}
 .dsha-page-head h3{margin:0;font-size:13px;line-height:20px;font-weight:600}
@@ -285,20 +110,20 @@ const CSS = `
 `
 
 function injectCss(): void {
-  if (document.querySelector('style[data-plugin-css="dsh-plugin-atlas"]') !== null) return
+  if (document.querySelector('style[data-plugin-css="dsh-plugin-archive-manager"]') !== null) return
   const style = document.createElement('style')
-  style.setAttribute('data-plugin-css', 'dsh-plugin-atlas')
+  style.setAttribute('data-plugin-css', 'dsh-plugin-archive-manager')
   style.textContent = CSS
   document.head.appendChild(style)
 }
 
 // ---------------------------------------------------------------------------
 
-export const name = 'dsh-plugin-atlas'
-export const inject = ['slots', 'locale', 'sessions']
+export const name = 'dsh-plugin-archive-manager'
+export const inject = ['slots', 'locale']
 
-export function apply(ctx: AtlasClientContext): void {
-  ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'dsh-plugin-atlas: dictionaries')
+export function apply(ctx: ArchiveClientContext): void {
+  ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'dsh-plugin-archive-manager: dictionaries')
   injectCss()
 
   const t = ctx.locale.bind(NS)
@@ -307,49 +132,7 @@ export function apply(ctx: AtlasClientContext): void {
   // Archive management: a first-level Settings section, next to 技能与 MCP.
   ctx.slots.inject('settings.section', () =>
     ctx.slots.register(
-      { name: 'settings.section', id: 'atlas', order: 14, label: () => t('sectionNav'), locale: NS },
+      { name: 'settings.section', id: 'archive-manager', order: 14, label: () => t('sectionNav'), locale: NS },
       () => createElement(ArchivePanel, { t, api }),
-    ))
-
-  // Conversation rail: a session-scoped child declared by one overlay entry.
-  ctx.slots.inject('shell.overlay', () =>
-    ctx.slots.register(
-      {
-        name: 'shell.overlay',
-        id: 'atlas-rail',
-        order: 100,
-        children: { 'atlas.rail': { kind: 'single', scope: 'session' } },
-      },
-      (props: { SessionProvider?: unknown; renderSlot?: (name: string, args: unknown) => unknown }) => {
-        const provider = props.SessionProvider
-        const renderSlot = props.renderSlot
-        if (typeof provider !== 'function' || typeof renderSlot !== 'function') return null
-        // The provider mounts the current session context and renders the
-        // session-scoped child through the shell's own render bridge.
-        type ProviderProps = { empty: () => unknown; children: () => unknown }
-        return createElement(
-          provider as unknown as React.FunctionComponent<ProviderProps>,
-          { empty: () => null, children: () => renderSlot('atlas.rail', {}) },
-        )
-      },
-    ))
-
-  ctx.slots.inject('atlas.rail', () =>
-    ctx.slots.register(
-      {
-        name: 'atlas.rail',
-        inject: (sessionId: string) => ({
-          jump: createJump(ctx.sessions, sessionId),
-          loadAll: createLoadAll(ctx.sessions, sessionId),
-          // Full-history tick index served from the durable log — no pages
-          // through the ChatView. A rejection drops the rail to its legacy
-          // snapshot + loadAll path.
-          ticks: () => fetchJson<{ ticks: Tick[] }>(
-            `/dsh-plugin-atlas/rail?sessionId=${encodeURIComponent(sessionId)}`,
-          ).then(body => body.ticks),
-          t,
-        }),
-      },
-      (props: Parameters<typeof Rail>[0]) => createElement(Rail, props),
     ))
 }

@@ -1,4 +1,4 @@
-/** Shared structural types across the atlas host modules.
+/** Shared structural types across the archive-manager host modules.
  *
  * Everything the plugin touches on the host side is described as a minimal
  * structural interface: the real services (workspaceRegistry,
@@ -23,7 +23,7 @@ export interface EventLike {
   readonly time: number
   readonly data: unknown
   /** Surface marker on message-producing events: 'append' or a replace op.
-   * The rail index only folds append-origin rows (the human transcript). */
+   * Archive previews only fold append-origin rows (the human transcript). */
   readonly surfaceOp?: unknown
 }
 
@@ -85,8 +85,8 @@ export interface WebServerService {
   }): () => void
 }
 
-/** The host surface atlas needs. */
-export interface AtlasHost {
+/** The host surface the archive manager needs. */
+export interface ArchiveHost {
   webServer: WebServerService
   workspaceRegistry: RegistryWriteSurface
   sessionPersistence: PersistenceLike

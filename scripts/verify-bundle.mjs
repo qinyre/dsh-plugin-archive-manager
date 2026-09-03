@@ -12,8 +12,8 @@ const bundlePath = join(root, 'lib', 'client.js')
 const bundle = readFileSync(bundlePath, 'utf8')
 
 const failures = []
-if (!bundle.includes('window.__ModuleLoader__.load({ id: "dsh-plugin-atlas"')) {
-  failures.push('bundle does not start with the loader registration for dsh-plugin-atlas')
+if (!bundle.includes('window.__ModuleLoader__.load({ id: "dsh-plugin-archive-manager"')) {
+  failures.push('bundle does not start with the loader registration for dsh-plugin-archive-manager')
 }
 for (const module of ['react', '@deepseek-ai/dsh-client-ui-slots', '@deepseek-ai/dsh-client-ui-locale', '@deepseek-ai/cordis', '@deepseek-ai/dsh-client-runtime/client']) {
   // Externals appear as require("...") calls, never inlined. A platform
@@ -27,4 +27,4 @@ if (failures.length > 0) {
   for (const failure of failures) console.error(`✗ ${failure}`)
   process.exit(1)
 }
-console.log('[dsh-plugin-atlas] client bundle artifact verified')
+console.log('[dsh-plugin-archive-manager] client bundle artifact verified')

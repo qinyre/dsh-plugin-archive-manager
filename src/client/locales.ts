@@ -1,4 +1,4 @@
-/** zh/en dictionaries for the settings archive section and the conversation rail. */
+/** zh/en dictionaries for the settings archive-management section. */
 
 export const zh = {
   sectionNav: '归档管理',
@@ -32,10 +32,6 @@ export const zh = {
   'rules.runNow': '立即执行',
   'rules.runResult': '已归档 {n} 个会话',
   'rules.invalid': '规则数值无效',
-  'rail.jumpPrev': '上一条消息',
-  'rail.jumpNext': '下一条消息',
-  'rail.previewEmpty': '（无文本）',
-  'rail.scrollLabel': '对话刻度条',
 }
 
 export const en = {
@@ -70,8 +66,4 @@ export const en = {
   'rules.runNow': 'Run now',
   'rules.runResult': 'Archived {n} session(s)',
   'rules.invalid': 'Invalid rule values',
-  'rail.jumpPrev': 'Previous message',
-  'rail.jumpNext': 'Next message',
-  'rail.previewEmpty': '(no text)',
-  'rail.scrollLabel': 'Conversation ruler',
 }

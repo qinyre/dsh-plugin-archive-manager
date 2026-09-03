@@ -9,7 +9,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { ArchivePreview, ArchiveRow, AutoRules } from '../types.ts'
 
 /** Host API surface (bound in client/index.ts via same-origin fetch). */
-export interface AtlasApi {
+export interface ArchiveApi {
   list(): Promise<{ rows: ArchiveRow[] }>
   preview(sessionId: string): Promise<ArchivePreview>
   unarchiveBatch(sessionIds: string[]): Promise<{ archivedSessionIds: string[] }>
@@ -20,7 +20,7 @@ export interface AtlasApi {
 
 export interface ArchivePanelProps {
   t: (key: string) => string
-  api: AtlasApi
+  api: ArchiveApi
 }
 
 /** Bound template: t('k') returns '…{n}…' — fill it locally. */

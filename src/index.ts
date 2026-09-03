@@ -1,4 +1,4 @@
-/** dsh-plugin-atlas host entry: mount the archive-manager HTTP routes once
+/** dsh-plugin-archive-manager host entry: mount the archive-manager HTTP routes once
  * the profile composes the webServer / workspaceRegistry / sessionPersistence
  * services, and run the opt-in auto-archive scheduler when the persisted
  * rules enable it.
@@ -12,11 +12,11 @@
  *   never bind, and the plugin stays dormant instead of blocking boot. */
 
 import type { Context } from '@deepseek-ai/cordis'
-import { mountAtlasRoutes } from './routes.ts'
+import { mountArchiveRoutes } from './routes.ts'
 import { loadRules, runAutoArchive } from './autorules.ts'
-import type { AtlasHost, PersistenceLike, RegistryWriteSurface, SessionsLike, WebServerService } from './types.ts'
+import type { ArchiveHost, PersistenceLike, RegistryWriteSurface, SessionsLike, WebServerService } from './types.ts'
 
-export const name = 'dsh-plugin-atlas'
+export const name = 'dsh-plugin-archive-manager'
 
 /** Delay after mount before the first auto-archive pass (keep startup
  * clean), and the re-check cadence. */
@@ -34,7 +34,7 @@ class AutoScheduler {
   private interval: ReturnType<typeof setInterval> | null = null
   private running = false
 
-  constructor(private readonly host: AtlasHost) {}
+  constructor(private readonly host: ArchiveHost) {}
 
   arm(): void {
     this.disarm()
@@ -53,14 +53,14 @@ class AutoScheduler {
       if (rules.enabled) {
         const result = await runAutoArchive(this.host, rules, false)
         if (result.archived.length > 0) {
-          this.host.logger?.info(`dsh-plugin-atlas: auto-archived ${result.archived.length} session(s)`)
+          this.host.logger?.info(`dsh-plugin-archive-manager: auto-archived ${result.archived.length} session(s)`)
         }
         for (const failure of result.failed) {
-          this.host.logger?.warn(`dsh-plugin-atlas: auto-archive of ${failure.sessionId} failed: ${failure.error}`)
+          this.host.logger?.warn(`dsh-plugin-archive-manager: auto-archive of ${failure.sessionId} failed: ${failure.error}`)
         }
       }
     } catch (error) {
-      this.host.logger?.warn(`dsh-plugin-atlas: auto-archive pass failed: ${String(error)}`)
+      this.host.logger?.warn(`dsh-plugin-archive-manager: auto-archive pass failed: ${String(error)}`)
     } finally {
       this.running = false
     }
@@ -87,7 +87,7 @@ export function apply(ctx: Context): void {
 
     // Assemble the host from the fetched service objects — never from ctx
     // property access (see the module doc).
-    const host: AtlasHost = {
+    const host: ArchiveHost = {
       webServer: webServer as WebServerService,
       workspaceRegistry: registry as RegistryWriteSurface,
       sessionPersistence: persistence as PersistenceLike,
@@ -96,10 +96,10 @@ export function apply(ctx: Context): void {
     }
     const scheduler = new AutoScheduler(host)
 
-    ctx.effect(() => mountAtlasRoutes(host, {
+    ctx.effect(() => mountArchiveRoutes(host, {
       onRulesChanged: rules => { if (rules.enabled) scheduler.arm(); else scheduler.disarm() },
-    }), 'dsh-plugin-atlas: http routes')
-    ctx.effect(() => () => scheduler.disarm(), 'dsh-plugin-atlas: scheduler disposal')
+    }), 'dsh-plugin-archive-manager: http routes')
+    ctx.effect(() => () => scheduler.disarm(), 'dsh-plugin-archive-manager: scheduler disposal')
     scheduler.arm()
   }
 

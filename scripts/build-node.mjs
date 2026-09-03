@@ -26,4 +26,4 @@ await build({
   logLevel: 'info',
 })
 
-console.log('[dsh-plugin-atlas] node half written to lib/index.js')
+console.log('[dsh-plugin-archive-manager] node half written to lib/index.js')

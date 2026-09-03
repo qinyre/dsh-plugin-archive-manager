@@ -1,8 +1,8 @@
 /**
- * dsh-plugin-atlas end-to-end smoke: real source dsh, temp DSH_HOME, install
- * this package into a profile, boot `dsh web`, then probe the atlas routes.
+ * dsh-plugin-archive-manager end-to-end smoke: real source dsh, temp DSH_HOME, install
+ * this package into a profile, boot `dsh web`, then probe the archive-manager routes.
  *
- * Gate: DSH_ATLAS_PLUGIN_SMOKE=1 (mirrors dsh-plugin-install's gate).
+ * Gate: DSH_ARCHIVE_MANAGER_PLUGIN_SMOKE=1 (mirrors dsh-plugin-install's gate).
  * Requires: deepseek-harness checked out beside this repo, `pnpm install`
  * already run there, and a host that permits capturing child-process output.
  */
@@ -21,7 +21,7 @@ const guard = existsSync(join(repoRoot, 'apps', 'cli', 'src', 'bin.ts'))
 const [nodeMajor, nodeMinor] = process.version.slice(1).split('.').map(Number)
 const nodeOk = (nodeMajor === 22 && nodeMinor >= 19) || nodeMajor >= 24
 
-const smokeRoot = mkdtempSync(join(tmpdir(), 'dsh-plugin-atlas-smoke-'))
+const smokeRoot = mkdtempSync(join(tmpdir(), 'dsh-plugin-archive-manager-smoke-'))
 const dshBin = join(repoRoot, 'apps', 'cli', 'src', 'bin.ts')
 
 /** Clean PATH (same reason as dsh-plugin-install's smoke: vitest prepends
@@ -81,14 +81,14 @@ function bootWeb(dshHome: string): Promise<{ port: number }> {
   })
 }
 
-describe.skipIf(process.env.DSH_ATLAS_PLUGIN_SMOKE !== '1' || !guard || !nodeOk)('dsh-plugin-atlas smoke', () => {
+describe.skipIf(process.env.DSH_ARCHIVE_MANAGER_PLUGIN_SMOKE !== '1' || !guard || !nodeOk)('dsh-plugin-archive-manager smoke', () => {
   afterAll(() => {
-    if (smokeRoot.startsWith(tmpdir()) && smokeRoot.includes('dsh-plugin-atlas-smoke-')) {
+    if (smokeRoot.startsWith(tmpdir()) && smokeRoot.includes('dsh-plugin-archive-manager-smoke-')) {
       rmSync(smokeRoot, { recursive: true, force: true })
     }
   })
 
-  it('installs into a temp profile, boots web, and serves the atlas routes', { timeout: 240_000 }, async () => {
+  it('installs into a temp profile, boots web, and serves the archive-manager routes', { timeout: 240_000 }, async () => {
     const env = smokeEnv(smokeRoot)
 
     const install = await dsh(['plugin', '--profile', 'web', 'add', `file:${pluginDir}`], env)
@@ -98,13 +98,13 @@ describe.skipIf(process.env.DSH_ATLAS_PLUGIN_SMOKE !== '1' || !guard || !nodeOk)
     const manifest = JSON.parse(readFileSync(join(smokeRoot, 'profiles', 'web', 'package.json'), 'utf8')) as {
       dsh?: { profile?: { bundles?: string[] } }
     }
-    expect(manifest.dsh?.profile?.bundles).toContain('dsh-plugin-atlas')
+    expect(manifest.dsh?.profile?.bundles).toContain('dsh-plugin-archive-manager')
 
     const { port } = await bootWeb(smokeRoot)
     const origin = `http://127.0.0.1:${port}`
 
     // status: routes alive, funnel present, rules default OFF
-    const status = await fetch(`${origin}/dsh-plugin-atlas/status`)
+    const status = await fetch(`${origin}/dsh-plugin-archive-manager/status`)
     expect(status.status).toBe(200)
     const statusBody = await status.json() as { ok?: boolean; unarchiveSupported?: boolean; rules?: { enabled?: boolean } }
     expect(statusBody.ok).toBe(true)
@@ -112,24 +112,16 @@ describe.skipIf(process.env.DSH_ATLAS_PLUGIN_SMOKE !== '1' || !guard || !nodeOk)
     expect(statusBody.rules?.enabled).toBe(false)
 
     // list on a fresh home: empty, but shaped
-    const list = await fetch(`${origin}/dsh-plugin-atlas/list`)
+    const list = await fetch(`${origin}/dsh-plugin-archive-manager/list`)
     expect(list.status).toBe(200)
     expect(await list.json()).toMatchObject({ rows: [] })
 
     // preview of an unknown id is a 404 (not a crash)
-    const preview = await fetch(`${origin}/dsh-plugin-atlas/preview?sessionId=nope`)
+    const preview = await fetch(`${origin}/dsh-plugin-archive-manager/preview?sessionId=nope`)
     expect(preview.status).toBe(404)
 
-    // rail index route on the real host: malformed id rejected, unknown id
-    // surfaces the persistence error as JSON (mounted, not a crash)
-    const railBad = await fetch(`${origin}/dsh-plugin-atlas/rail?sessionId=..%2Fetc`)
-    expect(railBad.status).toBe(400)
-    const railUnknown = await fetch(`${origin}/dsh-plugin-atlas/rail?sessionId=nope`)
-    expect(railUnknown.status).toBe(500)
-    expect(await railUnknown.json()).toMatchObject({ error: expect.any(String) })
-
     // cross-origin POST is fenced off
-    const csrf = await fetch(`${origin}/dsh-plugin-atlas/unarchive-batch`, {
+    const csrf = await fetch(`${origin}/dsh-plugin-archive-manager/unarchive-batch`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', origin: 'http://evil.example', host: `127.0.0.1:${port}` },
       body: JSON.stringify({ sessionIds: ['x'] }),
@@ -137,17 +129,17 @@ describe.skipIf(process.env.DSH_ATLAS_PLUGIN_SMOKE !== '1' || !guard || !nodeOk)
     expect(csrf.status).toBe(403)
 
     // same-origin rules round-trip persists into the temp home
-    const save = await fetch(`${origin}/dsh-plugin-atlas/rules`, {
+    const save = await fetch(`${origin}/dsh-plugin-archive-manager/rules`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', origin, host: `127.0.0.1:${port}` },
       body: JSON.stringify({ rules: { enabled: false, maxIdleDays: 7, perWorkspaceKeep: 3 } }),
     })
     expect(save.status).toBe(200)
-    const settingsFile = readFileSync(join(smokeRoot, 'dsh-plugin-atlas.json'), 'utf8')
+    const settingsFile = readFileSync(join(smokeRoot, 'dsh-plugin-archive-manager.json'), 'utf8')
     expect(settingsFile).toContain('"maxIdleDays": 7')
 
     // dry-run autorun selects nothing (rules disabled, empty home)
-    const autorun = await fetch(`${origin}/dsh-plugin-atlas/autorun`, {
+    const autorun = await fetch(`${origin}/dsh-plugin-archive-manager/autorun`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', origin, host: `127.0.0.1:${port}` },
       body: JSON.stringify({ dryRun: true }),

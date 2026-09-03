@@ -11,7 +11,7 @@ import { readFile, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { inspectionHeaderOf, inspectionLogOf } from './archive.ts'
-import type { AutoCandidate, AutoRules, AtlasHost, PersistenceLike, WorkspaceLike } from './types.ts'
+import type { AutoCandidate, AutoRules, ArchiveHost, PersistenceLike, WorkspaceLike } from './types.ts'
 
 /** Defaults: the whole feature is opt-in. */
 export const DEFAULT_RULES: AutoRules = { enabled: false, maxIdleDays: 30, perWorkspaceKeep: null }
@@ -21,19 +21,29 @@ const DAY_MS = 86_400_000
 
 /** The plugin's settings file lives next to the profile data, under DSH_HOME. */
 export function settingsPath(dshHome = process.env.DSH_HOME ?? join(homedir(), '.dsh')): string {
+  return join(dshHome, 'dsh-plugin-archive-manager.json')
+}
+
+/** Pre-rename location (this plugin was dsh-plugin-atlas until 0.3.0):
+ * consulted read-only so a rename never silently resets a user's rules. */
+function legacySettingsPath(dshHome = process.env.DSH_HOME ?? join(homedir(), '.dsh')): string {
   return join(dshHome, 'dsh-plugin-atlas.json')
 }
 
 /** Load persisted rules; any read/shape fault degrades to defaults (the
- * feature stays off — a corrupt settings file must never archive things). */
+ * feature stays off — a corrupt settings file must never archive things).
+ * Falls back to the pre-rename settings file when the new one is absent. */
 export async function loadRules(dshHome?: string): Promise<AutoRules> {
-  try {
-    const raw = JSON.parse(await readFile(settingsPath(dshHome), 'utf8')) as unknown
-    const validated = validateRules(raw)
-    return validated ?? DEFAULT_RULES
-  } catch {
-    return DEFAULT_RULES
+  for (const path of [settingsPath(dshHome), legacySettingsPath(dshHome)]) {
+    try {
+      const raw = JSON.parse(await readFile(path, 'utf8')) as unknown
+      const validated = validateRules(raw)
+      if (validated !== null) return validated
+    } catch {
+      // absent or unreadable — try the next candidate
+    }
   }
+  return DEFAULT_RULES
 }
 
 /** Persist rules; the write is atomic-enough for a single-object config
@@ -140,7 +150,7 @@ export interface AutoRunResult {
 /** Resolve activity for every visible candidate, run the policy, then (unless
  * dry-run) archive through the registry's public API. Per-session archive
  * failures are collected, never aborting the batch. */
-export async function runAutoArchive(host: AtlasHost, rules: AutoRules, dryRun: boolean): Promise<AutoRunResult> {
+export async function runAutoArchive(host: ArchiveHost, rules: AutoRules, dryRun: boolean): Promise<AutoRunResult> {
   const registry = host.workspaceRegistry
   const workspaces = registry.list()
   const archived = registry.archivedSessionIds

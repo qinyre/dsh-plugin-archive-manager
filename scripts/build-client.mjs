@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
-const id = 'dsh-plugin-atlas'
+const id = 'dsh-plugin-archive-manager'
 
 // Mirror the host's platform module table (packages/client/web/src/platform.ts
 // + the runtime store exemption). Anything else under @deepseek-ai/* that the
@@ -52,4 +52,4 @@ await build({
   logLevel: 'info',
 })
 
-console.log(`[dsh-plugin-atlas] client bundle written to lib/client.js (${id})`)
+console.log(`[dsh-plugin-archive-manager] client bundle written to lib/client.js (${id})`)

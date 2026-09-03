@@ -1,20 +1,19 @@
-/** HTTP routes bridging the archive drawer / rail settings to the host.
- * This layer parses requests, validates payloads, calls the service modules,
- * and serializes responses — policy lives in archive.ts / autorules.ts. */
+/** HTTP routes bridging the archive manager UI to the host. This layer
+ * parses requests, validates payloads, calls the service modules, and
+ * serializes responses — policy lives in archive.ts / autorules.ts. */
 
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { readJsonBody, sameOrigin, sendJson } from './http.ts'
-import { buildArchiveRows, buildPreview, inspectionLogOf, unarchiveIds, UnarchiveUnsupportedError } from './archive.ts'
+import { buildArchiveRows, buildPreview, unarchiveIds, UnarchiveUnsupportedError } from './archive.ts'
 import { loadRules, runAutoArchive, saveRules, validateRules } from './autorules.ts'
-import { railTicksOfLog } from './rail-index.ts'
-import type { AtlasHost, AutoRules } from './types.ts'
+import type { ArchiveHost, AutoRules } from './types.ts'
 
 /** Session ids are opaque strings; bound shape to keep payloads tame. */
 const SESSION_ID_RE = /^[A-Za-z0-9._-]{1,128}$/
 /** Batch upper bound — one per visible row is plenty. */
 const MAX_BATCH = 500
 
-export interface AtlasRouteOptions {
+export interface ArchiveRouteOptions {
   /** Where persisted rules live (tests inject a temp dir). */
   dshHome?: string
   /** Called after rules change so the scheduler can re-arm. */
@@ -25,9 +24,9 @@ function replyError(response: ServerResponse, status: number, error: string): vo
   sendJson(response, status, { error })
 }
 
-/** Register every /dsh-plugin-atlas route.
+/** Register every /dsh-plugin-archive-manager route.
  * @returns a disposer removing them all. */
-export function mountAtlasRoutes(host: AtlasHost, options: AtlasRouteOptions = {}): () => void {
+export function mountArchiveRoutes(host: ArchiveHost, options: ArchiveRouteOptions = {}): () => void {
   /** Serialized writer fence: one unarchive/rules write at a time. */
   let writing = false
 
@@ -55,13 +54,13 @@ export function mountAtlasRoutes(host: AtlasHost, options: AtlasRouteOptions = {
   const disposers = [
     host.webServer.register({
       kind: 'exact',
-      path: '/dsh-plugin-atlas/status',
+      path: '/dsh-plugin-archive-manager/status',
       handler: async (request, response) => {
         if (request.method !== 'GET') { response.writeHead(405, { allow: 'GET' }); response.end(); return }
         const rules = await loadRules(options.dshHome)
         sendJson(response, 200, {
           ok: true,
-          name: 'dsh-plugin-atlas',
+          name: 'dsh-plugin-archive-manager',
           unarchiveSupported: typeof host.workspaceRegistry.setState === 'function',
           archivedCount: host.workspaceRegistry.archivedSessionIds.length,
           rules,
@@ -71,7 +70,7 @@ export function mountAtlasRoutes(host: AtlasHost, options: AtlasRouteOptions = {
 
     host.webServer.register({
       kind: 'exact',
-      path: '/dsh-plugin-atlas/list',
+      path: '/dsh-plugin-archive-manager/list',
       handler: async (request, response) => {
         if (request.method !== 'GET') { response.writeHead(405, { allow: 'GET' }); response.end(); return }
         try {
@@ -90,7 +89,7 @@ export function mountAtlasRoutes(host: AtlasHost, options: AtlasRouteOptions = {
 
     host.webServer.register({
       kind: 'exact',
-      path: '/dsh-plugin-atlas/preview',
+      path: '/dsh-plugin-archive-manager/preview',
       handler: async (request, response) => {
         if (request.method !== 'GET') { response.writeHead(405, { allow: 'GET' }); response.end(); return }
         const id = new URL(request.url ?? '/', 'http://dsh').searchParams.get('sessionId') ?? ''
@@ -105,23 +104,7 @@ export function mountAtlasRoutes(host: AtlasHost, options: AtlasRouteOptions = {
 
     host.webServer.register({
       kind: 'exact',
-      path: '/dsh-plugin-atlas/rail',
-      handler: async (request, response) => {
-        if (request.method !== 'GET') { response.writeHead(405, { allow: 'GET' }); response.end(); return }
-        const id = new URL(request.url ?? '/', 'http://dsh').searchParams.get('sessionId') ?? ''
-        if (!SESSION_ID_RE.test(id)) { replyError(response, 400, 'invalid sessionId'); return }
-        try {
-          const inspection = await host.sessionPersistence.inspect(id)
-          sendJson(response, 200, { ticks: railTicksOfLog(inspectionLogOf(inspection)) })
-        } catch (error) {
-          replyError(response, 500, error instanceof Error ? error.message : String(error))
-        }
-      },
-    }),
-
-    host.webServer.register({
-      kind: 'exact',
-      path: '/dsh-plugin-atlas/unarchive',
+      path: '/dsh-plugin-archive-manager/unarchive',
       handler: async (request, response) => {
         if (request.method !== 'POST') { response.writeHead(405, { allow: 'POST' }); response.end(); return }
         await withWriteFence(request, response, async () => {
@@ -140,7 +123,7 @@ export function mountAtlasRoutes(host: AtlasHost, options: AtlasRouteOptions = {
 
     host.webServer.register({
       kind: 'exact',
-      path: '/dsh-plugin-atlas/unarchive-batch',
+      path: '/dsh-plugin-archive-manager/unarchive-batch',
       handler: async (request, response) => {
         if (request.method !== 'POST') { response.writeHead(405, { allow: 'POST' }); response.end(); return }
         await withWriteFence(request, response, async () => {
@@ -162,7 +145,7 @@ export function mountAtlasRoutes(host: AtlasHost, options: AtlasRouteOptions = {
 
     host.webServer.register({
       kind: 'exact',
-      path: '/dsh-plugin-atlas/rules',
+      path: '/dsh-plugin-archive-manager/rules',
       handler: async (request, response) => {
         if (request.method === 'GET') {
           sendJson(response, 200, { rules: await loadRules(options.dshHome) })
@@ -186,7 +169,7 @@ export function mountAtlasRoutes(host: AtlasHost, options: AtlasRouteOptions = {
 
     host.webServer.register({
       kind: 'exact',
-      path: '/dsh-plugin-atlas/autorun',
+      path: '/dsh-plugin-archive-manager/autorun',
       handler: async (request, response) => {
         if (request.method !== 'POST') { response.writeHead(405, { allow: 'POST' }); response.end(); return }
         await withWriteFence(request, response, async () => {
